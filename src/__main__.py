@@ -38,20 +38,39 @@ class RagCLI:
             f"-> {target}"
         )
 
-    def search(self, query: str, k: int = 5) -> None:
+    def search(
+        self,
+        query: str,
+        k: int = 5,
+        processed_directory: str = "data/processed",
+    ) -> None:
         """Print the top-k BM25 results for a single query.
 
         Args:
             query: Free-text question to search the corpus with.
             k: Number of results to return.
+            processed_directory: Directory holding the built index.
         """
-        print(f"[stub] search: query={query!r} k={k}")
+        from src import indexer, retriever
+
+        index = indexer.load_index(Path(processed_directory))
+        ranked = retriever.top_k(index, str(query), int(k))
+        if not ranked:
+            print("No results.")
+            return
+        for rank, (chunk_id, score) in enumerate(ranked, start=1):
+            file_path, first, last, _ = index.chunks[chunk_id]
+            print(
+                f"{rank}. {file_path} "
+                f"[{first}:{last}] score={score:.2f}"
+            )
 
     def search_dataset(
         self,
         dataset_path: str,
         k: int = 5,
         save_directory: str = "data/output/search_results",
+        processed_directory: str = "data/processed",
     ) -> None:
         """Run retrieval for every question in a dataset and save results.
 
@@ -59,10 +78,19 @@ class RagCLI:
             dataset_path: Path to a RagDataset JSON file.
             k: Number of results to keep per question.
             save_directory: Directory the results JSON is written into.
+            processed_directory: Directory holding the built index.
         """
+        from src import indexer, retriever
+
+        index = indexer.load_index(Path(processed_directory))
+        dataset = retriever.load_dataset(Path(dataset_path))
+        results = retriever.search_dataset(index, dataset, int(k))
+        target = retriever.save_results(
+            results, Path(save_directory), Path(dataset_path).name
+        )
         print(
-            f"[stub] search_dataset: dataset_path={dataset_path!r} "
-            f"k={k} save_directory={save_directory!r}"
+            f"Searched {len(results.search_results)} questions "
+            f"(k={results.k}) -> {target}"
         )
 
     def answer(self, query: str, k: int = 5) -> None:
