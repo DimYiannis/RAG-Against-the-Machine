@@ -8,6 +8,10 @@ dependencies = [
     "tqdm>=4.68.4",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["data", ".venv"]
+
 [dependency-groups]
 dev = [
     "flake8>=7.3.0",
