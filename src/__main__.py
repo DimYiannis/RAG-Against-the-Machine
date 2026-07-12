@@ -7,6 +7,7 @@ at the boundary guarantees the CLI never exits with a raw traceback.
 """
 
 import sys
+from pathlib import Path
 
 import fire
 
@@ -14,13 +15,28 @@ import fire
 class RagCLI:
     """RAG over the vLLM 0.10.1 codebase: index, search, answer, evaluate."""
 
-    def index(self, max_chunk_size: int = 2000) -> None:
+    def index(
+        self,
+        max_chunk_size: int = 2000,
+        data_directory: str = "data/raw",
+        save_directory: str = "data/processed",
+    ) -> None:
         """Chunk the corpus and build the persisted inverted index.
 
         Args:
             max_chunk_size: Maximum chunk span in characters (default 2000).
+            data_directory: Corpus root to ingest.
+            save_directory: Directory the index file is written into.
         """
-        print(f"[stub] index: max_chunk_size={max_chunk_size}")
+        from src import indexer
+
+        index = indexer.build_index(Path(data_directory), max_chunk_size)
+        target = indexer.save_index(index, Path(save_directory))
+        print(
+            f"Indexed {index.doc_count} chunks "
+            f"({len(index.postings)} terms, avgdl {index.avgdl:.0f}) "
+            f"-> {target}"
+        )
 
     def search(self, query: str, k: int = 5) -> None:
         """Print the top-k BM25 results for a single query.
