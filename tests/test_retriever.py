@@ -43,7 +43,7 @@ def test_bm25_score_matches_hand_calculation(tiny_index: Index) -> None:
     denom = 2 + 1.5 * (1 - 0.75 + 0.75 * 3/2.5) = 3.725
     score = ln 2 * 2 * 2.5 / 3.725
     """
-    ranked = top_k(tiny_index, "lora", k=5)
+    ranked = top_k(tiny_index, "lora", k=5, k1=1.5, b=0.75)
     assert len(ranked) == 1
     chunk_id, score = ranked[0]
     assert chunk_id == 0

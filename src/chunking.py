@@ -15,7 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 #: Markdown sections smaller than this are merged into a neighbour.
-MIN_SECTION_SIZE = 200
+#: Tuned in Phase 5: 600 beat 200 on docs recall@5 (0.79 -> 0.80) by
+#: keeping short subsections attached to enough surrounding context
+#: for the IoU>0.05 bar, without under-splitting long pages.
+MIN_SECTION_SIZE = 600
 
 #: ATX headers (``# `` … ``###### ``) at the start of a line.
 _HEADER_RE = re.compile(r"^#{1,6} ", re.MULTILINE)

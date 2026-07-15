@@ -88,8 +88,15 @@ def build_index(
         if text is None:
             continue
         rel_path = Path(os.path.relpath(path)).as_posix()
+        # Path tokens ("vllm", "model_executor", "gpu_model_runner",
+        # "py", ...) ride along with every chunk of the file: many
+        # questions name a file or module (verbatim or paraphrased)
+        # rather than quoting its content, and the path would
+        # otherwise never appear in any chunk's text. Measured in
+        # Phase 5: code recall@5 0.667 -> 0.758 with this alone.
+        path_tokens = tokenize(rel_path.removeprefix(f"{data_directory}/"))
         for chunk in chunk_text(text, rel_path, max_chunk_size):
-            tokens = tokenize(chunk.text)
+            tokens = tokenize(chunk.text) + path_tokens
             if not tokens:
                 continue
             chunk_id = len(chunks)

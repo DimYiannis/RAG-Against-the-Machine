@@ -28,8 +28,11 @@ from src.models import (
 )
 from src.tokenizer import tokenize
 
-DEFAULT_K1 = 1.5
-DEFAULT_B = 0.75
+#: Tuned in Phase 5 by sweeping k1 in [1.0, 1.5] x b in [0.75, 1.0]
+#: against both public datasets; this pair maximized docs recall@5
+#: while keeping code recall@5 within noise of its own peak.
+DEFAULT_K1 = 1.3
+DEFAULT_B = 0.85
 
 
 def top_k(

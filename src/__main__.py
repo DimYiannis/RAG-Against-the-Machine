@@ -130,9 +130,21 @@ class RagCLI:
             student_search_results_path: Path to a StudentSearchResults JSON.
             dataset_path: Path to the reference RagDataset JSON.
         """
+        from src import evaluator, retriever
+
+        results = evaluator.load_results(Path(student_search_results_path))
+        reference = retriever.load_dataset(Path(dataset_path))
+        report = evaluator.evaluate(results, reference)
         print(
-            "[stub] evaluate: student_search_results_path="
-            f"{student_search_results_path!r} dataset_path={dataset_path!r}"
+            f"recall@{results.k}: {report.recall:.4f} "
+            f"({report.sources_found}/{report.sources_total} sources, "
+            f"{report.questions_evaluated} questions"
+            + (
+                f", {report.questions_missing} missing from results"
+                if report.questions_missing
+                else ""
+            )
+            + ")"
         )
 
 

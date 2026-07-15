@@ -67,8 +67,8 @@ def test_round_trip_on_known_reference_files() -> None:
 
 def test_markdown_header_stays_with_section() -> None:
     """Each header starts a chunk containing its own body."""
-    body_a = "alpha " * 60
-    body_b = "beta " * 60
+    body_a = "alpha " * 150  # over MIN_SECTION_SIZE, stays unmerged
+    body_b = "beta " * 150
     text = f"# Title\n\n{body_a}\n\n## Sub\n\n{body_b}\n"
     chunks = chunk_markdown(text, "doc.md", MAX)
     _assert_round_trip(text, chunks)
