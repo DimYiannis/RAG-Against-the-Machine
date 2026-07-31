@@ -1,60 +1,43 @@
-"""Pydantic data models mandated by the subject.
-
-Field names match the subject verbatim; renaming any of them breaks the
-moulinette comparison. Extra models/fields may be added later, renames
-never. MinimalSource carries the one project-critical invariant: a span
-may never exceed MAX_SOURCE_SPAN characters, because a single over-long
-source invalidates an entire output file. The validator makes such an
-instance impossible to construct.
 """
+    pydantic models following the subject's guidelines.
+    standard field names so that moulinnette wont crush
 
+    based on subject max span must not exceed 2000 chars
+"""
 import uuid
 
 from pydantic import BaseModel, Field, model_validator
 
-MAX_SOURCE_SPAN = 2000
-
+MAX_SPAN = 2000
 
 class MinimalSource(BaseModel):
-    """A single retrieved span: file plus character offsets.
-
-    Attributes:
-        file_path: Path relative to project root, exactly as in the
-            corpus (e.g. ``data/raw/vllm-0.10.1/...``); compared
-            verbatim to the reference.
-        first_character_index: Start offset into the file's text.
-        last_character_index: End offset (exclusive) into the file.
     """
-
+        a single retrieved span
+        attrs:
+            file_path
+            first_char_index
+            last_char_index
+    """
     file_path: str
-    first_character_index: int
-    last_character_index: int
+    first_char_index: int
+    last_char_index: int
 
     @model_validator(mode="after")
     def _check_span(self) -> "MinimalSource":
-        """Reject negative, inverted, or over-long spans.
-
-        Returns:
-            The validated instance.
-
-        Raises:
-            ValueError: If offsets are negative, inverted, or the span
-                exceeds MAX_SOURCE_SPAN characters.
         """
-        first = self.first_character_index
-        last = self.last_character_index
+            check if span size is acceptable
+            - negative
+            - exceeding max
+            - inverted (last char preceeds the first)
+        """
+        first = self.first_char_index
+        last = self.last_char_index
         if first < 0:
-            raise ValueError(
-                f"first_character_index must be >= 0, got {first}"
-            )
+            raise ValueError("first char index must be bigger than 0")
         if last <= first:
-            raise ValueError(
-                f"span is empty or inverted: first={first}, last={last}"
-            )
-        if last - first > MAX_SOURCE_SPAN:
-            raise ValueError(
-                f"span {last - first} exceeds {MAX_SOURCE_SPAN} chars"
-            )
+            raise ValueError(f"span is empty or inverted: first char={first}, last char={last}")
+        if last - first > MAX_SPAN:
+            raise ValueError(f"span {last - first} exceeds the maximum capacity a chunk can have")
         return self
 
 
