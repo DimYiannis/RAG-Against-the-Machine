@@ -40,13 +40,13 @@ class MinimalSource(BaseModel):
             raise ValueError(f"span {last - first} exceeds the maximum capacity a chunk can have")
         return self
 
-
 class UnansweredQuestion(BaseModel):
-    """A question without reference sources or answer.
+    """
+        represent an unanswered question
 
-    Attributes:
-        question_id: Unique id; auto-generated uuid4 when absent.
-        question: The question text.
+        attrs:
+        question_id
+        question
     """
 
     question_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -54,11 +54,12 @@ class UnansweredQuestion(BaseModel):
 
 
 class AnsweredQuestion(UnansweredQuestion):
-    """A question with its reference sources and answer.
+    """
+        represent an unanswered question with its reference sources and answer.
 
-    Attributes:
-        sources: Ground-truth spans the answer is based on.
-        answer: The reference answer text.
+        attrs:
+            sources
+            answer
     """
 
     sources: list[MinimalSource]
@@ -66,23 +67,24 @@ class AnsweredQuestion(UnansweredQuestion):
 
 
 class RagDataset(BaseModel):
-    """A dataset of RAG questions, answered or not.
+    """ 
+        dataset of RAG questions, answered or not.
 
-    Attributes:
-        rag_questions: Questions; AnsweredQuestion is tried first in
-            the union so entries with sources/answer parse as answered.
+        attrs:
+        rag_questions:
     """
 
     rag_questions: list[AnsweredQuestion | UnansweredQuestion]
 
 
 class MinimalSearchResults(BaseModel):
-    """Retrieval output for one question.
+    """
+        retrieval output for one question.
 
-    Attributes:
-        question_id: Id copied from the dataset question.
-        question: The question text.
-        retrieved_sources: Top-k spans returned by the retriever.
+        attrs:
+            question_id
+            question
+            retrieved_sources: Top-k spans returned by the retriever.
     """
 
     question_id: str
@@ -91,21 +93,23 @@ class MinimalSearchResults(BaseModel):
 
 
 class MinimalAnswer(MinimalSearchResults):
-    """Retrieval output plus the generated answer for one question.
+    """
+        retrieval output plus the generated answer for one question.
 
-    Attributes:
-        answer: Answer generated from the retrieved sources.
+        attrs:
+            answer
     """
 
     answer: str
 
 
 class StudentSearchResults(BaseModel):
-    """Full search output file: one entry per dataset question.
+    """
+        full search output file: one entry per dataset question.
 
-    Attributes:
-        search_results: Per-question retrieval results.
-        k: Number of results requested per question.
+        attrs:
+            search_results: Per-question retrieval results.
+            k: number of results requested per question.
     """
 
     search_results: list[MinimalSearchResults]
@@ -113,11 +117,12 @@ class StudentSearchResults(BaseModel):
 
 
 class StudentSearchResultsAndAnswer(BaseModel):
-    """Full answer output file: one answered entry per question.
+    """
+        full answer output file: one answered entry per question.
 
-    Attributes:
-        search_results: Per-question retrieval results with answers.
-        k: Number of results requested per question.
+        attrs:
+            search_results: per-question retrieval results with answers.
+            k: number of results requested per question.
     """
 
     search_results: list[MinimalAnswer]
