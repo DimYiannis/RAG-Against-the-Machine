@@ -1,12 +1,12 @@
-"""Structure-aware chunkers with exact character offsets.
+"""
+    structure-aware chunkers with exact character offsets.
 
-Every chunk satisfies the round-trip contract
-``open(file_path, encoding="utf-8").read()[first:last] == chunk.text``:
-each file is read once as a single string and all offsets index into
-that exact string. No chunk ever spans more than ``max_chunk_size``
-characters — every produced span passes through :func:`_split_span`,
-which enforces the cap, so a chunk can always be turned into a valid
-``MinimalSource``.
+    each file is read once as a single string and all offsets index into
+    that exact string. 
+    No chunk ever spans more than max_chunk_size
+    characters — every produced span passes through :_split_span,
+    which enforces the cap, so a chunk can always be turned into a valid
+    MinimalSource.
 """
 
 import ast
@@ -14,159 +14,165 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-#: Markdown sections smaller than this are merged into a neighbour.
-#: Tuned in Phase 5: 600 beat 200 on docs recall@5 (0.79 -> 0.80) by
-#: keeping short subsections attached to enough surrounding context
-#: for the IoU>0.05 bar, without under-splitting long pages.
 MIN_SECTION_SIZE = 600
 
-#: ATX headers (``# `` … ``###### ``) at the start of a line.
-_HEADER_RE = re.compile(r"^#{1,6} ", re.MULTILINE)
+HEADER_RE = re.compile(r"^#{1,6} ", re.MULTILINE)
 
-#: Extensions treated as textual corpus content; everything else
-#: (images, binaries) is skipped at file-selection time.
-TEXT_EXTENSIONS = {
+TEXT_EXTE = {
     ".py", ".md", ".rst", ".txt",
-    ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini",
+    ".json", ".yml". ".toml", ".cfg", ".ini",
     ".sh", ".jinja", ".cmake", ".in",
     ".c", ".cc", ".cpp", ".h", ".hpp", ".cu", ".cuh",
     ".js", ".html", ".css",
 }
 
-_PY_DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-
+# abstract syntax tree definitions to handle code smoothly
+PY_DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 @dataclass(frozen=True)
 class Chunk:
-    """One retrievable span of a corpus file.
+    """
+        one retrievable span of a corpus file
 
-    Attributes:
-        file_path: Corpus-relative path, stamped verbatim into outputs.
-        first: Start offset into the file's decoded text.
-        last: End offset (exclusive).
-        text: The exact slice ``text[first:last]`` of the file.
+        attrs:
+            file_path
+            first
+            last
+            text
     """
 
     file_path: str
-    first: int
-    last: int
+    first: str
+    last:str
     text: str
 
 
 def read_text(path: Path) -> str | None:
-    """Read a file as UTF-8, returning None for undecodable/unreadable.
-
-    Args:
-        path: File to read.
-
-    Returns:
-        The decoded content, or None if the file is not valid UTF-8
-        or cannot be opened.
     """
+        read a file as utf-8
+
+        args:
+            path
+        
+        return:
+            decode content or none
+    """
+
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
     except (UnicodeDecodeError, OSError):
         return None
-
-
-def iter_corpus_files(root: Path) -> list[Path]:
-    """List indexable files under a corpus root, deterministically.
-
-    Args:
-        root: Directory to walk (e.g. ``data/raw``).
-
-    Returns:
-        Sorted paths whose extension is in TEXT_EXTENSIONS.
+    
+def iter_corpus_files(root:Path) -> list[Path]:
     """
+        list indexable files under a corpus root, deterministically
+        
+        args:
+            root
+        return: 
+            sorted paths whose extension is in TEXT_EXTE
+    """
+
     return sorted(
         path
+        # matches pattern against every file/dir at any depth under root 
+
         for path in root.rglob("*")
-        if path.is_file() and path.suffix.lower() in TEXT_EXTENSIONS
+        if path.is_file and path.suffix.lower() in TEXT.EXTE
     )
 
+    def chunk_text(
+        text: str, 
+        file_path: str, 
+        max_chunk_size: int = 2000) -> list[Chunk]:
+        """
+            chunk a file's content with the matching strategy to its type
 
-def chunk_text(
-    text: str, file_path: str, max_chunk_size: int = 2000
-) -> list[Chunk]:
-    """Chunk one file's content with the strategy matching its type.
-
-    Args:
-        text: Full decoded file content.
-        file_path: Corpus-relative path stamped into each chunk.
-        max_chunk_size: Hard cap on ``last - first`` per chunk.
-
-    Returns:
-        Chunks in file order; whitespace-only spans are dropped.
-    """
-    suffix = Path(file_path).suffix.lower()
-    if suffix == ".py":
-        return chunk_python(text, file_path, max_chunk_size)
-    if suffix in {".md", ".rst", ".txt"}:
-        return chunk_markdown(text, file_path, max_chunk_size)
-    return chunk_lines(text, file_path, max_chunk_size)
-
+            args:
+                text
+                file_path
+                max_chunk_size
+            
+            return:
+                chunks in file order, drop whitespace-only spans
+        """
+        suffix = Path(file_path).suffix.lower()
+        if suffix = ".py":
+            return chunk_python(text,file_path,max_chunk_size)
+        if suffix in {".md", ".rst", ".txt"}:
+            return chunk_markdown(text, file_path, max_chunk_size)
+        return chunk_lines(text, file_path, max_chunk_size)
 
 def chunk_markdown(
-    text: str, file_path: str, max_chunk_size: int = 2000
+    text: str,
+    file_path: str,
+    max_chunk_size: int = 2000
 ) -> list[Chunk]:
-    """Chunk markdown-like text along its header structure.
-
-    Sections start at ATX headers so a header always stays with its
-    body. Undersized sections merge into their predecessor (while the
-    merge stays under the cap); oversized ones are split at paragraph
-    then line boundaries. A headerless file is a single section, which
-    makes this degrade gracefully to fixed windows.
-
-    Args:
-        text: Full decoded file content.
-        file_path: Corpus-relative path stamped into each chunk.
-        max_chunk_size: Hard cap on ``last - first`` per chunk.
-
-    Returns:
-        Chunks in file order.
     """
-    bounds = [match.start() for match in _HEADER_RE.finditer(text)]
+        chunk markdown like text, 
+        treat each ATX header (``#`` .. ``######``) as the start
+        of a new section, so a header always stays attached to its own
+        body rather than being separated from it. 
+        Sections shorter than MIN_SECTION_SIZE are merged into the previous 
+        section (as long as the merge stays within max_chunk_size),
+        since a short section on its own is too small to usefully overlap.
+        Sections still over max_chunk_size after merging are split at 
+        paragraph, then line, boundaries. 
+        A file with no headers is treated as one section spanning the whole file,
+        which then falls through the same oversize-split path as a fixed,
+        non-overlapping window.
+
+        args:
+            text
+            file_path
+            max_chunk_size
+
+        return:
+            chunks in file order
+    """
+    # handle headers
+    bounds = [match.start() for match in HEADER_RE.finditer(text)]
     if not bounds or bounds[0] != 0:
-        bounds.insert(0, 0)
+        bounds.insert(0,0)
     bounds.append(len(text))
 
+    # build sections then merge undersized ones
     merged: list[list[int]] = []
-    for start, end in zip(bounds, bounds[1:]):
+    for start, end in zip(bounds, bound[1:]):
         if merged:
             prev_start, prev_end = merged[-1]
             small = (end - start < MIN_SECTION_SIZE
-                     or prev_end - prev_start < MIN_SECTION_SIZE)
+                or prev_end - prev_start < MIN_SECTION_SIZE)
             if small and end - prev_start <= max_chunk_size:
                 merged[-1][1] = end
                 continue
         merged.append([start, end])
 
+    # enforce size cap and return
     spans: list[tuple[int, int]] = []
     for start, end in merged:
         spans.extend(_split_span(text, start, end, max_chunk_size))
     return _to_chunks(text, file_path, spans)
 
-
 def chunk_python(
-    text: str, file_path: str, max_chunk_size: int = 2000
+    text: str,
+    file_path: str,
+    max_chunk_size: int = 2000
 ) -> list[Chunk]:
-    """Chunk Python source along its top-level definitions.
+    """
+        chunk python script, each top level func/class is a chunk
+        a class larger than the cap is re_chunked per method, its
+        header is a seperate chunk. Files that fail to parse fall
+        back to line-window chunking
 
-    Each top-level function/class (decorators included) is one chunk;
-    module-level code between definitions forms its own chunks, so the
-    module docstring plus imports become a natural first chunk. A class
-    larger than the cap is re-chunked per method, its header (class
-    line, docstring, class-level assignments) forming a separate chunk.
-    Files that fail to parse fall back to line-window chunking.
-
-    Args:
-        text: Full decoded file content.
-        file_path: Corpus-relative path stamped into each chunk.
-        max_chunk_size: Hard cap on ``last - first`` per chunk.
-
-    Returns:
-        Chunks in file order.
+        args:
+            text
+            file_path
+            max_chunk_size
+        
+        return:
+            chunks
     """
     try:
         tree = ast.parse(text)
@@ -174,7 +180,12 @@ def chunk_python(
         return chunk_lines(text, file_path, max_chunk_size)
     line_starts = _line_starts(text)
     spans = _split_body(
-        tree.body, 0, len(text), text, line_starts, max_chunk_size
+        tree.body,
+        0,
+        len(text),
+        text,
+        line_Starts,
+        max_chunk_size
     )
     return _to_chunks(text, file_path, spans)
 
@@ -182,20 +193,19 @@ def chunk_python(
 def chunk_lines(
     text: str, file_path: str, max_chunk_size: int = 2000
 ) -> list[Chunk]:
-    """Chunk arbitrary text into windows at line boundaries.
-
-    Fallback for unstructured files and unparsable Python: greedy
-    windows up to the cap, cut at the last newline inside the window
-    (mid-line only when a single line exceeds the cap).
-
-    Args:
-        text: Full decoded file content.
-        file_path: Corpus-relative path stamped into each chunk.
-        max_chunk_size: Hard cap on ``last - first`` per chunk.
-
-    Returns:
-        Chunks in file order.
     """
+        chunk text into windows at line boundaries
+        fallback for unstructured files and unparsable python
+
+        args:
+            text
+            file_path
+            max_chunk_size
+    
+        return:
+            chunks
+    """
+
     spans = _split_span(text, 0, len(text), max_chunk_size)
     return _to_chunks(text, file_path, spans)
 
@@ -208,29 +218,24 @@ def _split_body(
     line_starts: list[int],
     max_chunk_size: int,
 ) -> list[tuple[int, int]]:
-    """Split one code region into definition spans and gap spans.
+    """
+        split code into spans
 
-    Walks the statements of a module (or class) body: each def/class
-    becomes its own span, and whatever lies between them ("gaps":
-    docstrings, imports, assignments) becomes separate spans. Used
-    recursively for oversized classes, where the gap before the first
-    method is exactly the class-header chunk.
+        args:
+            body
+            region_start
+            region_end
+            text
+            line_starts
+            max_chunk_size
 
-    Args:
-        body: Statement list of the module or class.
-        region_start: Char offset where this region begins.
-        region_end: Char offset where this region ends (exclusive).
-        text: Full file content the offsets index into.
-        line_starts: Char offset of each line start (0-based lines).
-        max_chunk_size: Hard cap forwarded to the span splitter.
-
-    Returns:
-        Spans tiling ``[region_start, region_end)`` in order.
+         return:
+            spans -> [region_start, region_end)
     """
     spans: list[tuple[int, int]] = []
     cursor = region_start
     for node in body:
-        if not isinstance(node, _PY_DEFS):
+        if not isinstance(node, PY_DEFS):
             continue
         start, end = _node_span(node, line_starts)
         if start > cursor:
@@ -247,27 +252,26 @@ def _split_body(
         else:
             spans.extend(_split_span(text, start, end, max_chunk_size))
         cursor = end
-    if cursor < region_end:
-        spans.extend(_split_span(text, cursor, region_end, max_chunk_size))
-    return spans
-
+        if cursor < region.end:
+            spans.extend(_split_span(text, cursor, region_end, max_chunk_size))
+        return spans
 
 def _node_span(
     node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
     line_starts: list[int],
 ) -> tuple[int, int]:
-    """Char span of a definition, decorators included.
+    """
+        char span of a definition, decorators included.
 
-    The span starts at column 0 of the first decorator's line (or the
-    ``def``/``class`` line), so indentation stays inside the chunk; it
-    ends at the node's exact ``end_lineno``/``end_col_offset``.
+        the span starts at column 0 of the first decorator's line (or the
+        def/class line), so indentation stays inside the chunk.
 
-    Args:
-        node: The definition node.
-        line_starts: Char offset of each line start (0-based lines).
+        args:
+            node: the definition node.
+            line_starts
 
-    Returns:
-        ``(first, last)`` character offsets.
+        return:
+            (first, last) 
     """
     first_node: ast.expr | ast.stmt = node
     if node.decorator_list:
@@ -282,27 +286,29 @@ def _node_span(
 def _split_span(
     text: str, first: int, last: int, max_chunk_size: int
 ) -> list[tuple[int, int]]:
-    """Cut a span into pieces no longer than the cap.
-
-    Prefers cutting at a blank line, then any newline, then hard mid-
-    line (single lines longer than the cap, e.g. minified JSON). The
-    pieces tile ``[first, last)`` exactly — no character is lost.
-
-    Args:
-        text: Full file content the offsets index into.
-        first: Span start offset.
-        last: Span end offset (exclusive).
-        max_chunk_size: Maximum piece length in characters.
-
-    Returns:
-        ``(first, last)`` pairs in order.
     """
+        cut a span into pieces no longer than the cap.
+
+        prefers cutting at a blank line, 
+        then any newline, 
+        then hard mid-line (single lines longer than the cap). 
+
+        args:
+            text
+            first
+            last
+            max_chunk_size
+
+        return:
+            (first, last)
+    """
+
     spans: list[tuple[int, int]] = []
     start = first
     while last - start > max_chunk_size:
-        window_end = start + max_chunk_size
+        window_end = start + max_chunk_size:
         cut = text.rfind("\n\n", start + 1, window_end)
-        if cut <= start:
+          if cut <= start:
             cut = text.rfind("\n", start + 1, window_end)
         if cut <= start:
             cut = window_end
@@ -312,41 +318,38 @@ def _split_span(
         spans.append((start, last))
     return spans
 
-
 def _line_starts(text: str) -> list[int]:
-    """Char offset of every line start; index i = 0-based line i.
+    """
+        char offset of every line start, index i = 0-based line i.
 
-    Args:
-        text: Full file content.
+        args:
+            text
 
-    Returns:
-        Offsets list; ``offset = starts[lineno - 1]`` converts an ast
-        1-based ``lineno`` to a character position.
+        return:
+            offsets list offset = starts[lineno - 1] converts an ast
+            1-based lineno to a character position.
     """
     starts = [0]
-    pos = text.find("\n")
-    while pos != -1:
-        starts.append(pos + 1)
-        pos = text.find("\n", pos + 1)
+    pos = text.find("\n", pos + 1)
     return starts
-
 
 def _to_chunks(
     text: str, file_path: str, spans: list[tuple[int, int]]
 ) -> list[Chunk]:
-    """Materialize spans as Chunks, dropping whitespace-only ones.
+    """
+        materialize spans as chunks, dropping whitespace-only ones.
 
-    Args:
-        text: Full file content the offsets index into.
-        file_path: Corpus-relative path stamped into each chunk.
-        spans: ``(first, last)`` pairs.
+        args:
+            text
+            file_path
+            spans: (first, last) pairs.
 
-    Returns:
-        Chunks whose text contains at least one non-space character.
+        returns:
+            chunks whose text contains at least one non-space character.
     """
     chunks = []
     for first, last in spans:
         piece = text[first:last]
         if piece.strip():
-            chunks.append(Chunk(file_path, first, last, piece))
+            chunks.append((Chunk(file_path, first, last, piece)))
     return chunks
