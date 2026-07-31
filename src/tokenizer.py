@@ -1,48 +1,49 @@
-"""Identifier-aware tokenizer shared by indexing and querying.
-
-The exact same function must tokenize corpus chunks and queries —
-any asymmetry silently breaks retrieval. Identifiers are kept whole
-AND split into subtokens (``enable_lora`` -> ``enable_lora``,
-``enable``, ``lora``): questions either quote identifiers verbatim
-(whole token matches) or paraphrase them (subtokens match). This
-dual emission is the main lever for the code-recall target.
+"""
+    identifier-aware tokenizer shared by indexing and querying.
+ 
+    Identifiers are kept whole AND split into subtokens 
+    -> (enable_lora -> enable_lora, enable, lora): 
+    questions either quote whole token matches or paraphrase 
+    them subtokens match. 
+    This dual emission is the main lever for the code-recall target.
 """
 
+# python's regex module
 import re
 
-#: A word: a maximal run of letters, digits and underscores.
-_WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+# both compiled patterns precompiled at module load (re.compile) 
+# so they're not recompiled per call, cheap to reuse across every chunk/query.
 
-#: CamelCase splitter: ``HTTPServer`` -> ``HTTP``, ``Server``;
-#: ``enableLora`` -> ``enable``, ``Lora``; digits split off.
-_CAMEL_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
+# matches a maximal run of letters/digits/underscore
+WORD_RE = re.compile(r"[A-Za-z0-9_]+")
 
+# four alternatives, tried in order, used to split a single identifier piece into
+#  CamelCase/acronym-aware subwords:
+CAMEL_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
 
-def tokenize(text: str) -> list[str]:
-    """Tokenize text for indexing or querying.
+def tokenize(text:str) -> list[str]:
+    """
+        tokenize text for indexing, querying
 
-    Lowercases, splits on non-alphanumerics, and for every compound
-    identifier emits the whole (lowercased) identifier plus its
-    snake_case/CamelCase subtokens. Single-character and pure-numeric
-    tokens are dropped as noise.
+        used the compiled patterns to split properly
 
-    Args:
-        text: Raw chunk or query text.
+        args: text
 
-    Returns:
-        Tokens in occurrence order (duplicates kept — term frequency
-        is meaningful to BM25).
+        return:
+            tokens in occurence order
     """
     tokens: list[str] = []
-    for match in _WORD_RE.finditer(text):
+    for match in WORD_RE.finditer(text):
         word = match.group()
         lowered = word.lower()
         if _keep(lowered):
             tokens.append(lowered)
         parts = [
             part
-            for piece in word.split("_")
-            for part in _CAMEL_RE.findall(piece)
+            # underscore fragments 'enable_HTTPServer'
+            for piece in word.split("_") 
+            # scan fragments for capitals, [enable, HTTPServer]
+            for part in CAMEL_RE.findall(piece)
         ]
         for part in parts:
             part_lower = part.lower()
@@ -50,14 +51,14 @@ def tokenize(text: str) -> list[str]:
                 tokens.append(part_lower)
     return tokens
 
-
 def _keep(token: str) -> bool:
-    """Filter out noise tokens.
-
-    Args:
-        token: Lowercased candidate token.
-
-    Returns:
-        False for single characters and pure numbers, True otherwise.
+    """
+        filter out noise
+        
+        args: 
+            token: lowercased candidate token
+        
+        return: 
+            false for single chars and pure nums, true otherwise
     """
     return len(token) > 1 and not token.isdigit()
