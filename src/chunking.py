@@ -20,7 +20,7 @@ HEADER_RE = re.compile(r"^#{1,6} ", re.MULTILINE)
 
 TEXT_EXTE = {
     ".py", ".md", ".rst", ".txt",
-    ".json", ".yml". ".toml", ".cfg", ".ini",
+    ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini",
     ".sh", ".jinja", ".cmake", ".in",
     ".c", ".cc", ".cpp", ".h", ".hpp", ".cu", ".cuh",
     ".js", ".html", ".css",
@@ -42,8 +42,8 @@ class Chunk:
     """
 
     file_path: str
-    first: str
-    last:str
+    first: int
+    last: int
     text: str
 
 
@@ -79,30 +79,30 @@ def iter_corpus_files(root:Path) -> list[Path]:
         # matches pattern against every file/dir at any depth under root 
 
         for path in root.rglob("*")
-        if path.is_file and path.suffix.lower() in TEXT.EXTE
+        if path.is_file() and path.suffix.lower() in TEXT_EXTE
     )
 
-    def chunk_text(
-        text: str, 
-        file_path: str, 
-        max_chunk_size: int = 2000) -> list[Chunk]:
-        """
-            chunk a file's content with the matching strategy to its type
+def chunk_text(
+    text: str,
+    file_path: str,
+    max_chunk_size: int = 2000) -> list[Chunk]:
+    """
+        chunk a file's content with the matching strategy to its type
 
-            args:
-                text
-                file_path
-                max_chunk_size
-            
-            return:
-                chunks in file order, drop whitespace-only spans
-        """
-        suffix = Path(file_path).suffix.lower()
-        if suffix = ".py":
-            return chunk_python(text,file_path,max_chunk_size)
-        if suffix in {".md", ".rst", ".txt"}:
-            return chunk_markdown(text, file_path, max_chunk_size)
-        return chunk_lines(text, file_path, max_chunk_size)
+        args:
+            text
+            file_path
+            max_chunk_size
+
+        return:
+            chunks in file order, drop whitespace-only spans
+    """
+    suffix = Path(file_path).suffix.lower()
+    if suffix == ".py":
+        return chunk_python(text,file_path,max_chunk_size)
+    if suffix in {".md", ".rst", ".txt"}:
+        return chunk_markdown(text, file_path, max_chunk_size)
+    return chunk_lines(text, file_path, max_chunk_size)
 
 def chunk_markdown(
     text: str,
@@ -139,7 +139,7 @@ def chunk_markdown(
 
     # build sections then merge undersized ones
     merged: list[list[int]] = []
-    for start, end in zip(bounds, bound[1:]):
+    for start, end in zip(bounds, bounds[1:]):
         if merged:
             prev_start, prev_end = merged[-1]
             small = (end - start < MIN_SECTION_SIZE
@@ -184,7 +184,7 @@ def chunk_python(
         0,
         len(text),
         text,
-        line_Starts,
+        line_starts,
         max_chunk_size
     )
     return _to_chunks(text, file_path, spans)
@@ -252,9 +252,9 @@ def _split_body(
         else:
             spans.extend(_split_span(text, start, end, max_chunk_size))
         cursor = end
-        if cursor < region.end:
-            spans.extend(_split_span(text, cursor, region_end, max_chunk_size))
-        return spans
+    if cursor < region_end:
+        spans.extend(_split_span(text, cursor, region_end, max_chunk_size))
+    return spans
 
 def _node_span(
     node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
@@ -306,9 +306,9 @@ def _split_span(
     spans: list[tuple[int, int]] = []
     start = first
     while last - start > max_chunk_size:
-        window_end = start + max_chunk_size:
+        window_end = start + max_chunk_size
         cut = text.rfind("\n\n", start + 1, window_end)
-          if cut <= start:
+        if cut <= start:
             cut = text.rfind("\n", start + 1, window_end)
         if cut <= start:
             cut = window_end
@@ -330,7 +330,10 @@ def _line_starts(text: str) -> list[int]:
             1-based lineno to a character position.
     """
     starts = [0]
-    pos = text.find("\n", pos + 1)
+    pos = text.find("\n", 0)
+    while pos != -1:
+        starts.append(pos + 1)
+        pos = text.find("\n", pos + 1)
     return starts
 
 def _to_chunks(

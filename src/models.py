@@ -15,12 +15,12 @@ class MinimalSource(BaseModel):
         a single retrieved span
         attrs:
             file_path
-            first_char_index
-            last_char_index
+            first_character_index
+            last_character_index
     """
     file_path: str
-    first_char_index: int
-    last_char_index: int
+    first_character_index: int
+    last_character_index: int
 
     @model_validator(mode="after")
     def _check_span(self) -> "MinimalSource":
@@ -30,8 +30,8 @@ class MinimalSource(BaseModel):
             - exceeding max
             - inverted (last char preceeds the first)
         """
-        first = self.first_char_index
-        last = self.last_char_index
+        first = self.first_character_index
+        last = self.last_character_index
         if first < 0:
             raise ValueError("first char index must be bigger than 0")
         if last <= first:
