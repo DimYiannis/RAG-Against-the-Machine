@@ -34,7 +34,8 @@ class RagCLI:
         target = indexer.save_index(index, Path(save_directory))
         print(
             f"Indexed {index.doc_count} chunks "
-            f"({len(index.postings)} terms, avgdl {index.avgdl:.0f}) "
+            f"({len(index.scorer.vocab_dict)} terms, "
+            f"avgdl {index.avgdl:.0f}) "
             f"-> {target}"
         )
 
