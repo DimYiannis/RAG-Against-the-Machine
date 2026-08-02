@@ -93,14 +93,31 @@ class RagCLI:
             f"(k={results.k}) -> {target}"
         )
 
-    def answer(self, query: str, k: int = 5) -> None:
+    def answer(
+        self,
+        query: str,
+        k: int = 5,
+        processed_directory: str = "data/processed",
+    ) -> None:
         """Retrieve top-k sources for a query and generate an answer.
 
         Args:
             query: Free-text question to answer.
             k: Number of retrieved sources to ground the answer on.
+            processed_directory: Directory holding the built index.
         """
-        print(f"[stub] answer: query={query!r} k={k}")
+        from src import generator, indexer, retriever
+
+        index = indexer.load_index(Path(processed_directory))
+        ranked = retriever.top_k(index, str(query), int(k))
+        sources = [
+            retriever.to_source(index, chunk_id) for chunk_id, _ in ranked
+        ]
+        tokenizer, model = generator.load_model()
+        answer_text = generator.generate_answer(
+            tokenizer, model, str(query), sources
+        )
+        print(answer_text)
 
     def answer_dataset(
         self,
@@ -113,10 +130,17 @@ class RagCLI:
             student_search_results_path: Path to a StudentSearchResults JSON.
             save_directory: Directory the answered JSON is written into.
         """
+        from src import evaluator, generator
+
+        results = evaluator.load_results(Path(student_search_results_path))
+        tokenizer, model = generator.load_model()
+        answered = generator.answer_results(tokenizer, model, results)
+        results_name = Path(student_search_results_path).name
+        target = generator.save_answers(
+            answered, Path(save_directory), results_name
+        )
         print(
-            "[stub] answer_dataset: student_search_results_path="
-            f"{student_search_results_path!r} "
-            f"save_directory={save_directory!r}"
+            f"Answered {len(answered.search_results)} questions -> {target}"
         )
 
     def evaluate(
