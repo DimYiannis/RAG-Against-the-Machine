@@ -1,10 +1,12 @@
-"""Independent recall@k evaluation (no moulinette involvement).
+"""
+    recall@k evaluation
 
-A reference source counts as found when some retrieved source has the
-identical file_path (verbatim string comparison, like the grader) and
-the character spans overlap with IoU > IOU_THRESHOLD. Recall@k is the
-fraction of a question's reference sources found, averaged over all
-questions that have reference sources.
+    reference source counts as found when some retrieved source has the
+    identical file_path (verbatim string comparison, like the grader) and
+    the character spans overlap with IoU > IOU_THRESHOLD. 
+    
+    recall@k -> the fraction of a question's reference sources found, 
+    averaged over all questions that have reference sources.
 """
 
 from dataclasses import dataclass
@@ -19,40 +21,42 @@ from src.models import (
 
 IOU_THRESHOLD = 0.05
 
-
 @dataclass(frozen=True)
 class EvaluationReport:
-    """Aggregate recall figures for one results/reference pair.
-
-    Attributes:
-        recall: Mean per-question recall in [0, 1].
-        questions_evaluated: Questions with reference sources that
-            were matched against results.
-        questions_missing: Reference questions absent from results.
-        sources_found: Reference sources matched by some retrieval.
-        sources_total: All reference sources over evaluated questions.
     """
+        aggregate recall figures for one results/reference pair
 
+        attrs:
+            recall: mean per-question recall in 0-1
+            questions_evaluated: questions with reference sources that
+                were matched against results.
+            questions_missing: reference questions absent from resutls
+            sources_found: sources matched by some retrieval
+            sources_total: all reference source over evaluated questions
+    """
     recall: float
     questions_evaluated: int
     questions_missing: int
     sources_found: int
     sources_total: int
 
-
 def interval_iou(
-    first_a: int, last_a: int, first_b: int, last_b: int
+    first_a: int,
+    last_a: int,
+    first_b: int,
+    last_b: int,
 ) -> float:
-    """Intersection-over-union of two character ranges.
+    """
+        IoU of 2 character ranges
 
-    Args:
-        first_a: Start of range A.
-        last_a: End (exclusive) of range A.
-        first_b: Start of range B.
-        last_b: End (exclusive) of range B.
+        args:
+            first_a: start of range a
+            last_a: end of range a
+            first_b
+            last_b
 
-    Returns:
-        |A ∩ B| / |A ∪ B| in [0, 1]; 0 when disjoint or degenerate.
+        return:
+            |A ∩ B| / |A ∪ B| in [0, 1]; 0 when disjoint or degenerate
     """
     intersection = min(last_a, last_b) - max(first_a, first_b)
     if intersection <= 0:
@@ -60,19 +64,19 @@ def interval_iou(
     union = max(last_a, last_b) - min(first_a, first_b)
     return intersection / union
 
-
 def source_found(
     reference: MinimalSource, retrieved: list[MinimalSource]
 ) -> bool:
-    """Whether any retrieved source matches a reference source.
+    """
+        if a retrieved source matches a reference source
 
-    Args:
-        reference: Ground-truth source.
-        retrieved: Sources returned by the retriever.
-
-    Returns:
-        True if some retrieved source has the identical file_path and
-        span IoU strictly above IOU_THRESHOLD.
+        args:
+            reference: ground-truth source
+            retrieved: sources returned by the retriever
+        
+        return:
+            true if some retrieved source has the identical file_path
+            and span IoU strictly above the threshold
     """
     return any(
         candidate.file_path == reference.file_path
@@ -85,23 +89,19 @@ def source_found(
         > IOU_THRESHOLD
         for candidate in retrieved
     )
-
-
+    
 def evaluate(
     results: StudentSearchResults, reference: RagDataset
-) -> EvaluationReport:
-    """Score search results against a reference dataset.
+)-> EvaluationReport:
+    """
+        score search results against a reference dataset
 
-    Args:
-        results: The student's saved search results.
-        reference: Dataset whose AnsweredQuestions carry ground truth.
-
-    Returns:
-        An EvaluationReport with mean per-question recall.
-
-    Raises:
-        ValueError: If the reference has no answered questions with
-            sources (nothing to evaluate against).
+        args:
+            results: saved search results
+            reference: dataset whose answeredquestions carry truth
+        
+        return:
+            evaluationreport with mean per-question recall
     """
     retrieved_by_id = {
         entry.question_id: entry.retrieved_sources
@@ -112,6 +112,7 @@ def evaluate(
     found_total = 0
     sources_total = 0
     for question in reference.rag_questions:
+        # skkip if question is unasnwered or there is no context
         if not isinstance(question, AnsweredQuestion) or not question.sources:
             continue
         retrieved = retrieved_by_id.get(question.question_id)
@@ -126,30 +127,25 @@ def evaluate(
         sources_total += len(question.sources)
     if not per_question:
         raise ValueError(
-            "reference dataset contains no answered questions with "
-            "sources — nothing to evaluate"
+            "reference dataset has no answered questions"
+            "with sources - nothing to evaluate"
         )
     return EvaluationReport(
         recall=sum(per_question) / len(per_question),
-        questions_evaluated=len(per_question),
+        questions_evaluated= len(per_question),
         questions_missing=missing,
         sources_found=found_total,
         sources_total=sources_total,
     )
-
-
+    
 def load_results(path: Path) -> StudentSearchResults:
-    """Load and validate a StudentSearchResults JSON file.
+    """
+        load and validate a StudentSearchResults json file
 
-    Args:
-        path: Results file location.
-
-    Returns:
-        The parsed results.
-
-    Raises:
-        FileNotFoundError: If the file does not exist.
-        ValueError: If it is not valid StudentSearchResults JSON.
+        args:
+            path
+        return:
+            parsed results
     """
     if not path.is_file():
         raise FileNotFoundError(f"search results not found: {path}")
@@ -158,5 +154,5 @@ def load_results(path: Path) -> StudentSearchResults:
             return StudentSearchResults.model_validate_json(handle.read())
     except ValueError as exc:
         raise ValueError(
-            f"malformed search results JSON in {path}: {exc}"
+            f"malformed search results json in {path}: {exc}"
         ) from exc
