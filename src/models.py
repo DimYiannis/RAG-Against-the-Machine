@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 MAX_SPAN = 2000
 
+
 class MinimalSource(BaseModel):
     """
         a single retrieved span
@@ -35,10 +36,17 @@ class MinimalSource(BaseModel):
         if first < 0:
             raise ValueError("first char index must be bigger than 0")
         if last <= first:
-            raise ValueError(f"span is empty or inverted: first char={first}, last char={last}")
+            raise ValueError(
+                f"span is empty or inverted: first char={first}, "
+                f"last char={last}"
+            )
         if last - first > MAX_SPAN:
-            raise ValueError(f"span {last - first} exceeds the maximum capacity a chunk can have")
+            raise ValueError(
+                f"span {last - first} exceeds the maximum capacity "
+                "a chunk can have"
+            )
         return self
+
 
 class UnansweredQuestion(BaseModel):
     """
@@ -67,7 +75,7 @@ class AnsweredQuestion(UnansweredQuestion):
 
 
 class RagDataset(BaseModel):
-    """ 
+    """
         dataset of RAG questions, answered or not.
 
         attrs:

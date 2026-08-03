@@ -5,9 +5,6 @@
     subtokens and path tokens are part of the index
 """
 
-import heapq
-import math
-from collections import defaultdict
 from pathlib import Path
 
 from tqdm import tqdm
@@ -21,7 +18,8 @@ from src.models import (
 )
 from src.tokenizer import tokenize
 
-def top_k(index: Index, query:str, k: int) -> list[tuple[int,float]]:
+
+def top_k(index: Index, query: str, k: int) -> list[tuple[int, float]]:
     """
         return the k best chunks for a query, best first.
 
@@ -51,10 +49,11 @@ def top_k(index: Index, query:str, k: int) -> list[tuple[int,float]]:
         for chunk_id, score in zip(ids[0], scores[0])
         if score > 0
     ]
-    # deterministic tie-break: sort by score descending (-item[1]), 
+    # deterministic tie-break: sort by score descending (-item[1]),
     # and when scores are equal, sort by chunk_id ascending
     ranked.sort(key=lambda item: (-item[1], item[0]))
     return ranked
+
 
 def to_source(index: Index, chunk_id: int) -> MinimalSource:
     """
@@ -63,19 +62,20 @@ def to_source(index: Index, chunk_id: int) -> MinimalSource:
         args:
             index
             chunk_id
-        
+
         return:
-            MinimalSource with the chunk's verbatim path 
+            MinimalSource with the chunk's verbatim path
             and char span
     """
     file_path, first, last, _ = index.chunks[chunk_id]
     return MinimalSource(
         file_path=file_path,
         first_character_index=first,
-        last_character_index = last,
+        last_character_index=last,
     )
 
-def load_dataset(path:Path)-> RagDataset:
+
+def load_dataset(path: Path) -> RagDataset:
     """
         load and validate a RagDataset JSON file
 
@@ -105,12 +105,12 @@ def search_dataset(
 
         args:
             index: chunk metadata + bm25 scorer
-            dataset: questions 
+            dataset: questions
             k: number of sources to keep per question
             show_progress: tqdm bar
 
         return:
-            StudentSearchResults 
+            StudentSearchResults
     """
     results = []
     questions = tqdm(
@@ -130,11 +130,12 @@ def search_dataset(
                 ],
             )
         )
-    return StudentSearchResults(search_results=results, k = k)
+    return StudentSearchResults(search_results=results, k=k)
+
 
 def save_results(
-    results: StudentSearchResults, save_directory: Path, filename:str
-)-> Path:
+    results: StudentSearchResults, save_directory: Path, filename: str
+) -> Path:
     """
         output search results as json in a dir
 

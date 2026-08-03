@@ -3,9 +3,9 @@
 
     reference source counts as found when some retrieved source has the
     identical file_path (verbatim string comparison, like the grader) and
-    the character spans overlap with IoU > IOU_THRESHOLD. 
-    
-    recall@k -> the fraction of a question's reference sources found, 
+    the character spans overlap with IoU > IOU_THRESHOLD.
+
+    recall@k -> the fraction of a question's reference sources found,
     averaged over all questions that have reference sources.
 """
 
@@ -20,6 +20,7 @@ from src.models import (
 )
 
 IOU_THRESHOLD = 0.05
+
 
 @dataclass(frozen=True)
 class EvaluationReport:
@@ -39,6 +40,7 @@ class EvaluationReport:
     questions_missing: int
     sources_found: int
     sources_total: int
+
 
 def interval_iou(
     first_a: int,
@@ -64,6 +66,7 @@ def interval_iou(
     union = max(last_a, last_b) - min(first_a, first_b)
     return intersection / union
 
+
 def source_found(
     reference: MinimalSource, retrieved: list[MinimalSource]
 ) -> bool:
@@ -73,7 +76,7 @@ def source_found(
         args:
             reference: ground-truth source
             retrieved: sources returned by the retriever
-        
+
         return:
             true if some retrieved source has the identical file_path
             and span IoU strictly above the threshold
@@ -89,17 +92,18 @@ def source_found(
         > IOU_THRESHOLD
         for candidate in retrieved
     )
-    
+
+
 def evaluate(
     results: StudentSearchResults, reference: RagDataset
-)-> EvaluationReport:
+) -> EvaluationReport:
     """
         score search results against a reference dataset
 
         args:
             results: saved search results
             reference: dataset whose answeredquestions carry truth
-        
+
         return:
             evaluationreport with mean per-question recall
     """
@@ -132,12 +136,13 @@ def evaluate(
         )
     return EvaluationReport(
         recall=sum(per_question) / len(per_question),
-        questions_evaluated= len(per_question),
+        questions_evaluated=len(per_question),
         questions_missing=missing,
         sources_found=found_total,
         sources_total=sources_total,
     )
-    
+
+
 def load_results(path: Path) -> StudentSearchResults:
     """
         load and validate a StudentSearchResults json file
