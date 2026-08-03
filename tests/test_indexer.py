@@ -22,18 +22,19 @@ def mini_corpus(tmp_path: Path) -> Path:
     return root
 
 
-def test_build_creates_postings(mini_corpus: Path) -> None:
-    """Terms map to the chunks containing them, with frequencies."""
+def test_build_indexes_our_tokens(mini_corpus: Path) -> None:
+    """Our tokenizer's output reaches the bm25s vocabulary.
+
+    Guards the load-bearing property of feeding bm25s pre-tokenized
+    lists: subtokens (lora) and the whole identifier (enable_lora) are
+    both matchable, which raw-text indexing would lose.
+    """
     index = build_index(mini_corpus, 2000, show_progress=False)
     assert index.doc_count == 2
     assert index.avgdl > 0
-    server_postings = index.postings["server"]
-    assert len(server_postings) == 2  # both files mention it
-    assert len(index.postings["enable_lora"]) == 1
-    assert len(index.postings["lora"]) == 1
-    for chunk_id, freq in server_postings:
-        assert 0 <= chunk_id < index.doc_count
-        assert freq >= 1
+    vocab = index.scorer.vocab_dict
+    for term in ("server", "enable_lora", "lora", "enable"):
+        assert term in vocab
 
 
 def test_chunk_meta_has_offsets_and_length(mini_corpus: Path) -> None:
@@ -53,9 +54,9 @@ def test_save_load_round_trip(mini_corpus: Path, tmp_path: Path) -> None:
     loaded = load_index(tmp_path / "processed")
     assert isinstance(loaded, Index)
     assert loaded.chunks == index.chunks
-    assert loaded.postings == index.postings
     assert loaded.avgdl == index.avgdl
     assert loaded.max_chunk_size == index.max_chunk_size
+    assert loaded.scorer.vocab_dict == index.scorer.vocab_dict
 
 
 def test_load_missing_index_is_clean_error(tmp_path: Path) -> None:

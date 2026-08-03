@@ -1,9 +1,14 @@
-"""BM25 retriever tests, including a hand-computed score check."""
+"""BM25 retriever tests over the bm25s-backed index.
+
+The hand-computed score check lives on the `bm25-handrolled` branch:
+with bm25s the arithmetic belongs to the library, so these assert
+ranking behaviour and the contract top_k owes its callers instead.
+"""
 
 import json
-import math
 from pathlib import Path
 
+import bm25s
 import pytest
 
 from src.indexer import Index
@@ -20,35 +25,30 @@ from src.retriever import (
 @pytest.fixture()
 def tiny_index() -> Index:
     """Two chunks: doc0 about lora (3 tokens), doc1 about servers."""
+    corpus_tokens = [
+        ["enable_lora", "enable", "lora", "lora"],
+        ["server", "config"],
+    ]
+    scorer = bm25s.BM25(k1=1.3, b=0.85, method="lucene")
+    scorer.index(corpus_tokens, show_progress=False)
     return Index(
         max_chunk_size=2000,
         chunks=[
-            ("data/raw/a.py", 0, 30, 3),
+            ("data/raw/a.py", 0, 30, 4),
             ("data/raw/b.md", 0, 20, 2),
         ],
-        postings={
-            "lora": [(0, 2)],
-            "enable": [(0, 1)],
-            "server": [(1, 1)],
-            "config": [(1, 1)],
-        },
-        avgdl=2.5,
+        scorer=scorer,
+        avgdl=3.0,
     )
 
 
-def test_bm25_score_matches_hand_calculation(tiny_index: Index) -> None:
-    """Score for 'lora' on doc0, computed by hand with k1=1.5 b=0.75.
-
-    idf = ln((2 - 1 + 0.5)/(1 + 0.5) + 1) = ln 2
-    denom = 2 + 1.5 * (1 - 0.75 + 0.75 * 3/2.5) = 3.725
-    score = ln 2 * 2 * 2.5 / 3.725
-    """
-    ranked = top_k(tiny_index, "lora", k=5, k1=1.5, b=0.75)
-    assert len(ranked) == 1
-    chunk_id, score = ranked[0]
-    assert chunk_id == 0
-    expected = math.log(2) * 2 * 2.5 / 3.725
-    assert score == pytest.approx(expected)
+def test_scores_are_positive_and_descending(tiny_index: Index) -> None:
+    """Results come back best-first with usable positive scores."""
+    ranked = top_k(tiny_index, "lora enable server config", k=2)
+    assert len(ranked) == 2
+    scores = [score for _, score in ranked]
+    assert all(score > 0 for score in scores)
+    assert scores == sorted(scores, reverse=True)
 
 
 def test_matching_doc_ranks_first(tiny_index: Index) -> None:
