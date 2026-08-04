@@ -1,12 +1,16 @@
-"""Grounded answer generation with Qwen3-0.6B.
+"""
+    grounded answer generation with Qwen3-0.6B.
 
-Sources are re-sliced from the corpus files they point at (chunk text
-is never stored in the index, only offsets — see indexer.py), assembled
-into a numbered context block, and handed to the model behind a system
-prompt that forbids answering from outside knowledge. Sources are kept
-best-ranked first and dropped worst-ranked first when the assembled
-context would exceed the token budget, since the retriever already
-orders them by relevance.
+    sources are re-sliced from the corpus files they point at (chunk text
+    is never stored in the index, only offsets), 
+    assembled into a numbered context block, and handed to the model behind a system
+    prompt that forbids answering from outside knowledge. 
+    
+    Sources are kept best-ranked first and dropped worst-ranked first when the assembled
+    context would exceed the token budget, since the retriever already
+    orders them by relevance.
+
+    chunkcmetadata -> reslice corpus -> context block -> prompt -> grounded response
 """
 
 from pathlib import Path
@@ -28,15 +32,12 @@ from src.models import (
     StudentSearchResultsAndAnswer,
 )
 
-#: Model named by the subject; must work, other models optional on top.
 DEFAULT_MODEL = "Qwen/Qwen3-0.6B"
 
-#: Token budget for the assembled source context. Leaves headroom under
-#: Qwen3's context window for the system prompt, question, and the
-#: generated answer itself.
+# token budget for the assembled source block
 MAX_CONTEXT_TOKENS = 3000
 
-#: Generation length cap; answers are expected to be a few sentences.
+# generation length cap
 MAX_NEW_TOKENS = 512
 
 SYSTEM_PROMPT = (
@@ -46,39 +47,34 @@ SYSTEM_PROMPT = (
     "guessing."
 )
 
-#: Placeholder answer when no source text could be gathered at all.
+# default answer when no source is gathered
 NO_SOURCES_ANSWER = "No sources were available to answer this question."
-
 
 def load_model(
     model_name: str = DEFAULT_MODEL,
 ) -> tuple[PreTrainedTokenizerBase, PreTrainedModel]:
-    """Load the generation tokenizer and model once.
+    """
+        load generation tokenizer and model
 
-    Args:
-        model_name: Hugging Face model id to load.
-
-    Returns:
-        The tokenizer and model, ready for ``generate_answer``.
-
-    Raises:
-        OSError: If the model cannot be downloaded or found locally.
+        args:
+            model_name
+        
+        return:
+            tokenizer and model
     """
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # load model weights
     model = AutoModelForCausalLM.from_pretrained(model_name)
     model.eval()
     return tokenizer, model
 
-
 def _source_block(source: MinimalSource) -> str | None:
-    """Re-slice one source's text from its corpus file.
+    """
+        re-slice one source's text from corpus file
 
-    Args:
-        source: A retrieved span, verbatim ``file_path`` plus offsets.
-
-    Returns:
-        A labeled text block for the prompt, or None if the file is
-        missing or undecodable (e.g. a stale search result).
+        args:
+            text block for the prompt, or none if
+            file is missing
     """
     text = read_text(Path(source.file_path))
     if text is None:
@@ -86,25 +82,27 @@ def _source_block(source: MinimalSource) -> str | None:
     span = text[source.first_character_index:source.last_character_index]
     return f"[{source.file_path}]\n{span}"
 
-
 def _fit_sources(
     tokenizer: PreTrainedTokenizerBase,
     sources: list[MinimalSource],
-    max_context_tokens: int,
+    max_control_tokens: int,
 ) -> list[str]:
-    """Select source blocks that fit the context token budget.
 
-    Args:
-        tokenizer: Tokenizer used to count tokens (must match the
-            generation model, since token counts are model-specific).
-        sources: Retrieved sources, best-ranked first.
-        max_context_tokens: Hard cap on the assembled context.
+    """
+        select source blocks that fit the token budget
 
-    Returns:
-        Text blocks in ranked order, worst-ranked ones dropped first
-        once the budget is exceeded. Always keeps at least the first
-        available block, even if it alone exceeds the budget, so a
-        question with sources never gets an empty context.
+        args:
+            tokenizer: tokenizer used to count tokens 
+                (must match the generation model, since token
+                counts are model-specific)
+            sources: retrieved sources, best ranked first
+            max_context_tokens: cap on the assembled context
+        
+        return:
+            text blocks in ranked order, worst ranked ones are dropped first
+            once the budget is exceeded.
+            allways keep the first avalaible block even if the budget is exceeded
+            so a question with sources never gets an empty context
     """
     blocks: list[str] = []
     used_tokens = 0
@@ -113,12 +111,11 @@ def _fit_sources(
         if block is None:
             continue
         n_tokens = len(tokenizer.encode(block))
-        if blocks and used_tokens + n_tokens > max_context_tokens:
+        if blocks and used_tokens + n_tokens > max_control_tokens:
             break
         blocks.append(block)
         used_tokens += n_tokens
     return blocks
-
 
 def generate_answer(
     tokenizer: PreTrainedTokenizerBase,
@@ -128,19 +125,19 @@ def generate_answer(
     max_context_tokens: int = MAX_CONTEXT_TOKENS,
     max_new_tokens: int = MAX_NEW_TOKENS,
 ) -> str:
-    """Generate a grounded answer for one question from its sources.
+    """
+        generate grounded answer for one question from its sources
 
-    Args:
-        tokenizer: Loaded Qwen3 tokenizer.
-        model: Loaded Qwen3 causal LM.
-        question: The question text.
-        sources: Retrieved sources, best-ranked first.
-        max_context_tokens: Token budget for the assembled context.
-        max_new_tokens: Maximum number of tokens to generate.
-
-    Returns:
-        The model's answer text, or a fixed placeholder if no source
-        text could be recovered at all.
+        args:
+            tokenizer: loaded Qwen3 tokenizer
+            model: loaded Qwen3 casual LM
+            question
+            sources: retrieved sources, best-ranked first
+            max_context_tokens
+            max_new_tokens
+        
+        return:
+            model's answer or fixed response if no source was recovered
     """
     blocks = _fit_sources(tokenizer, sources, max_context_tokens)
     if not blocks:
@@ -160,9 +157,9 @@ def generate_answer(
         enable_thinking=False,
     )
     inputs = tokenizer(prompt, return_tensors="pt")
+    # avoid gradient tracking and backprop, only inference
     with torch.no_grad():
-        # transformers' generate() stub resolves oddly against **inputs
-        # unpacking; the call itself is the standard HF generation idiom.
+        # transformers' generate() stub resolves oddly against **inputs unpacking
         output_ids = model.generate(  # type: ignore[operator]
             **inputs,
             max_new_tokens=max_new_tokens,
@@ -173,24 +170,22 @@ def generate_answer(
     decoded = str(tokenizer.decode(new_tokens, skip_special_tokens=True))
     return decoded.strip()
 
-
 def answer_results(
     tokenizer: PreTrainedTokenizerBase,
     model: PreTrainedModel,
     results: StudentSearchResults,
     show_progress: bool = True,
 ) -> StudentSearchResultsAndAnswer:
-    """Generate an answer for every question in saved search results.
+    """
+        generate an answer for every question in saved search results
 
-    Args:
-        tokenizer: Loaded Qwen3 tokenizer.
-        model: Loaded Qwen3 causal LM.
-        results: Previously saved retrieval results.
-        show_progress: Display a tqdm bar over questions.
-
-    Returns:
-        StudentSearchResultsAndAnswer preserving question ids, order,
-        and retrieved sources, with an answer added per question.
+        args:
+            tokenizer
+            model
+            results: previously saved retrieval results
+            show_progress: tqdm bar
+        return:
+            StudentSearchResultsAndAnswer
     """
     answers = []
     entries = tqdm(
@@ -213,19 +208,19 @@ def answer_results(
         )
     return StudentSearchResultsAndAnswer(search_results=answers, k=results.k)
 
-
 def save_answers(
     results: StudentSearchResultsAndAnswer, save_directory: Path, filename: str
 ) -> Path:
-    """Write answered results as JSON into a directory.
+    """
+        write answered results as json into a directory
 
-    Args:
-        results: The results to serialize.
-        save_directory: Target directory (created if missing).
-        filename: Output file name, conventionally the input's.
-
-    Returns:
-        Path of the written file.
+        args:
+            results: results to serialize
+            save_directory
+            filename
+        
+        return
+            path of the written file
     """
     save_directory.mkdir(parents=True, exist_ok=True)
     target = save_directory / filename
