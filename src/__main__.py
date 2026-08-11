@@ -8,8 +8,36 @@ at the boundary guarantees the CLI never exits with a raw traceback.
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import fire
+import numpy as np
+
+if TYPE_CHECKING:
+    # type-only: keeps sentence-transformers/torch out of the import
+    # path for lexical-only (mandatory) runs.
+    from sentence_transformers import SentenceTransformer
+
+
+def _load_semantic(
+    mode: str, processed_directory: str
+) -> "tuple[np.ndarray | None, SentenceTransformer | None]":
+    """Load the embedding matrix + model needed for semantic mode.
+
+    Args:
+        mode: Retrieval mode requested by the caller.
+        processed_directory: Directory holding index.pkl + embeddings.npy.
+
+    Returns:
+        (embeddings, model) pair; both None for "lexical" mode.
+    """
+    if mode not in ("semantic", "hybrid"):
+        return None, None
+    from src import embeddings
+
+    matrix = embeddings.load_embeddings(Path(processed_directory))
+    model = embeddings.load_model()
+    return matrix, model
 
 
 class RagCLI:
@@ -20,6 +48,7 @@ class RagCLI:
         max_chunk_size: int = 2000,
         data_directory: str = "data/raw",
         save_directory: str = "data/processed",
+        mode: str = "lexical",
     ) -> None:
         """Chunk the corpus and build the persisted inverted index.
 
@@ -27,8 +56,20 @@ class RagCLI:
             max_chunk_size: Maximum chunk span in characters (default 2000).
             data_directory: Corpus root to ingest.
             save_directory: Directory the index file is written into.
+            mode: "lexical" (default, mandatory path) or "semantic"/
+                "hybrid" to also embed every chunk and persist the
+                vector matrix alongside the bm25 index (hybrid needs
+                the same embeddings semantic search does).
         """
+        import time
+
         from src import indexer
+
+        if mode not in ("lexical", "semantic", "hybrid"):
+            raise ValueError(
+                f"unknown mode {mode!r} "
+                "(expected 'lexical', 'semantic' or 'hybrid')"
+            )
 
         index = indexer.build_index(Path(data_directory), max_chunk_size)
         target = indexer.save_index(index, Path(save_directory))
@@ -39,23 +80,46 @@ class RagCLI:
             f"-> {target}"
         )
 
+        if mode in ("semantic", "hybrid"):
+            from src import embeddings
+
+            start = time.perf_counter()
+            model = embeddings.load_model()
+            matrix = embeddings.build_embeddings(index, model=model)
+            emb_target = embeddings.save_embeddings(
+                matrix, Path(save_directory)
+            )
+            elapsed = time.perf_counter() - start
+            print(
+                f"Embedded {matrix.shape[0]} chunks -> {emb_target} "
+                f"({elapsed:.1f}s)"
+            )
+
     def search(
         self,
         query: str,
         k: int = 5,
         processed_directory: str = "data/processed",
+        mode: str = "lexical",
     ) -> None:
-        """Print the top-k BM25 results for a single query.
+        """Print the top-k results for a single query.
 
         Args:
             query: Free-text question to search the corpus with.
             k: Number of results to return.
             processed_directory: Directory holding the built index.
+            mode: "lexical" (bm25, default), "semantic" (cosine
+                similarity over a previously built embedding matrix),
+                or "hybrid" (RRF fusion of both).
         """
         from src import indexer, retriever
 
         index = indexer.load_index(Path(processed_directory))
-        ranked = retriever.top_k(index, str(query), int(k))
+        embeddings_matrix, model = _load_semantic(mode, processed_directory)
+        ranked = retriever.top_k(
+            index, str(query), int(k),
+            mode=mode, embeddings=embeddings_matrix, model=model,
+        )
         if not ranked:
             print("No results.")
             return
@@ -72,6 +136,7 @@ class RagCLI:
         k: int = 5,
         save_directory: str = "data/output/search_results",
         processed_directory: str = "data/processed",
+        mode: str = "lexical",
     ) -> None:
         """Run retrieval for every question in a dataset and save results.
 
@@ -80,12 +145,17 @@ class RagCLI:
             k: Number of results to keep per question.
             save_directory: Directory the results JSON is written into.
             processed_directory: Directory holding the built index.
+            mode: "lexical" (bm25, default), "semantic", or "hybrid".
         """
         from src import indexer, retriever
 
         index = indexer.load_index(Path(processed_directory))
         dataset = retriever.load_dataset(Path(dataset_path))
-        results = retriever.search_dataset(index, dataset, int(k))
+        embeddings_matrix, model = _load_semantic(mode, processed_directory)
+        results = retriever.search_dataset(
+            index, dataset, int(k),
+            mode=mode, embeddings=embeddings_matrix, model=model,
+        )
         target = retriever.save_results(
             results, Path(save_directory), Path(dataset_path).name
         )
@@ -99,6 +169,7 @@ class RagCLI:
         query: str,
         k: int = 5,
         processed_directory: str = "data/processed",
+        mode: str = "lexical",
     ) -> None:
         """Retrieve top-k sources for a query and generate an answer.
 
@@ -106,11 +177,18 @@ class RagCLI:
             query: Free-text question to answer.
             k: Number of retrieved sources to ground the answer on.
             processed_directory: Directory holding the built index.
+            mode: "lexical" (bm25, default), "semantic", or "hybrid".
         """
         from src import generator, indexer, retriever
 
         index = indexer.load_index(Path(processed_directory))
-        ranked = retriever.top_k(index, str(query), int(k))
+        embeddings_matrix, embedding_model = _load_semantic(
+            mode, processed_directory
+        )
+        ranked = retriever.top_k(
+            index, str(query), int(k),
+            mode=mode, embeddings=embeddings_matrix, model=embedding_model,
+        )
         sources = [
             retriever.to_source(index, chunk_id) for chunk_id, _ in ranked
         ]

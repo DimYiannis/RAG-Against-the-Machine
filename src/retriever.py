@@ -6,7 +6,9 @@
 """
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import numpy as np
 from tqdm import tqdm
 
 from src.indexer import Index
@@ -18,8 +20,27 @@ from src.models import (
 )
 from src.tokenizer import tokenize
 
+if TYPE_CHECKING:
+    # type-only: keeps sentence-transformers/torch out of the import
+    # path for lexical-only (mandatory) runs.
+    from sentence_transformers import SentenceTransformer
 
-def top_k(index: Index, query: str, k: int) -> list[tuple[int, float]]:
+VALID_MODES = ("lexical", "semantic", "hybrid")
+# Cormack et al. standard RRF constant.
+RRF_C = 60
+# candidates pulled from each retriever before fusion (subject bonus #2:
+# "top-N (~100) from each retriever").
+FUSION_CANDIDATES = 100
+
+
+def top_k(
+    index: Index,
+    query: str,
+    k: int,
+    mode: str = "lexical",
+    embeddings: np.ndarray | None = None,
+    model: "SentenceTransformer | None" = None,
+) -> list[tuple[int, float]]:
     """
         return the k best chunks for a query, best first.
 
@@ -27,12 +48,40 @@ def top_k(index: Index, query: str, k: int) -> list[tuple[int, float]]:
             index: The loaded index (chunk metadata + bm25s scorer).
             query: Free-text question; tokenized identically to chunks.
             k: Number of results wanted; k <= 0 yields no results.
+            mode:
+                "lexical" (bm25, default - mandatory path, untouched),
+                "semantic" (cosine similarity over embeddings),
+                "hybrid" (RRF fusion of both - needs embeddings+model).
+            embeddings: matrix, required for "semantic"
+                and "hybrid".
+            model: loaded SentenceTransformer, required for "semantic"
+                and "hybrid".
 
         return:
             (chunk_id, score) pairs, score descending; ties break on the
             lower chunk id so results are deterministic. Empty for empty
             or fully out-of-vocabulary queries.
     """
+    if mode not in VALID_MODES:
+        raise ValueError(
+            f"unknown mode {mode!r} (expected one of {VALID_MODES})"
+        )
+
+    if mode == "hybrid":
+        if embeddings is None or model is None:
+            raise ValueError("hybrid mode requires embeddings + model")
+        lexical_ranked = top_k(index, query, FUSION_CANDIDATES)
+        semantic_ranked = top_k(
+            index, query, FUSION_CANDIDATES,
+            mode="semantic", embeddings=embeddings, model=model,
+        )
+        return fuse(lexical_ranked, semantic_ranked, k)
+
+    if mode == "semantic":
+        if embeddings is None or model is None:
+            raise ValueError("semantic mode requires embeddings + model")
+        from src.embeddings import semantic_top_k
+        return semantic_top_k(embeddings, model, query, k)
 
     if k <= 0:
         return []
@@ -53,6 +102,43 @@ def top_k(index: Index, query: str, k: int) -> list[tuple[int, float]]:
     # and when scores are equal, sort by chunk_id ascending
     ranked.sort(key=lambda item: (-item[1], item[0]))
     return ranked
+
+
+def fuse(
+    lexical_ranked: list[tuple[int, float]],
+    semantic_ranked: list[tuple[int, float]],
+    k: int,
+    c: int = RRF_C,
+) -> list[tuple[int, float]]:
+    """
+        Reciprocal Rank Fusion of a lexical and a semantic ranking.
+
+        RRF(d) = sum over retrievers of 1 / (c + rank_i(d)), with
+        1-based ranks. Rank-based, so bm25 and cosine scores never
+        need normalizing onto a shared scale.
+
+        args:
+            lexical_ranked: (chunk_id, score) pairs, best first.
+            semantic_ranked: (chunk_id, score) pairs, best first.
+            k: number of fused results to return; k <= 0 yields none.
+            c: RRF constant (Cormack et al. standard = 60).
+
+        return:
+            (chunk_id, rrf_score) pairs, score descending, top-k; ties
+            break on the lower chunk id.
+    """
+    if k <= 0:
+        return []
+    rrf_scores: dict[int, float] = {}
+    for ranked in (lexical_ranked, semantic_ranked):
+        for rank, (chunk_id, _) in enumerate(ranked, start=1):
+            rrf_scores[chunk_id] = (
+                rrf_scores.get(chunk_id, 0.0) + 1.0 / (c + rank)
+            )
+    fused = sorted(
+        rrf_scores.items(), key=lambda item: (-item[1], item[0])
+    )
+    return fused[:k]
 
 
 def to_source(index: Index, chunk_id: int) -> MinimalSource:
@@ -98,6 +184,9 @@ def search_dataset(
     index: Index,
     dataset: RagDataset,
     k: int,
+    mode: str = "lexical",
+    embeddings: np.ndarray | None = None,
+    model: "SentenceTransformer | None" = None,
     show_progress: bool = True,
 ) -> StudentSearchResults:
     """
@@ -107,6 +196,9 @@ def search_dataset(
             index: chunk metadata + bm25 scorer
             dataset: questions
             k: number of sources to keep per question
+            mode: "lexical" (default) or "semantic"
+            embeddings: matrix, required for "semantic"
+            model: loaded SentenceTransformer, required for "semantic"
             show_progress: tqdm bar
 
         return:
@@ -120,7 +212,10 @@ def search_dataset(
         disable=not show_progress,
     )
     for question in questions:
-        ranked = top_k(index, question.question, k)
+        ranked = top_k(
+            index, question.question, k,
+            mode=mode, embeddings=embeddings, model=model,
+        )
         results.append(
             MinimalSearchResults(
                 question_id=question.question_id,
