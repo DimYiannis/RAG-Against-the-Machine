@@ -187,6 +187,7 @@ def search_dataset(
     mode: str = "lexical",
     embeddings: np.ndarray | None = None,
     model: "SentenceTransformer | None" = None,
+    cache_dir: Path | None = None,
     show_progress: bool = True,
 ) -> StudentSearchResults:
     """
@@ -196,9 +197,15 @@ def search_dataset(
             index: chunk metadata + bm25 scorer
             dataset: questions
             k: number of sources to keep per question
-            mode: "lexical" (default) or "semantic"
-            embeddings: matrix, required for "semantic"
-            model: loaded SentenceTransformer, required for "semantic"
+            mode: "lexical" (default), "semantic", or "hybrid"
+            embeddings: matrix, required for "semantic"/"hybrid" unless
+                cache_dir makes every question a cache hit
+            model: loaded SentenceTransformer, same requirement
+            cache_dir: when given, checks/stores (query,k,mode) results
+                in the on-disk query cache under this dir (bonus #4).
+                For semantic/hybrid, embeddings/model are only loaded
+                lazily on the first actual cache miss, so an
+                all-cache-hit rerun never pays the model-load cost.
             show_progress: tqdm bar
 
         return:
@@ -212,10 +219,25 @@ def search_dataset(
         disable=not show_progress,
     )
     for question in questions:
-        ranked = top_k(
-            index, question.question, k,
-            mode=mode, embeddings=embeddings, model=model,
-        )
+        ranked = None
+        if cache_dir is not None:
+            from src import cache
+            ranked = cache.get(cache_dir, question.question, k, mode)
+        if ranked is None:
+            if (
+                cache_dir is not None and mode in ("semantic", "hybrid")
+                and model is None
+            ):
+                from src import embeddings as embeddings_module
+                embeddings = embeddings_module.load_embeddings(cache_dir)
+                model = embeddings_module.load_model()
+            ranked = top_k(
+                index, question.question, k,
+                mode=mode, embeddings=embeddings, model=model,
+            )
+            if cache_dir is not None:
+                from src import cache
+                cache.put(cache_dir, question.question, k, mode, ranked)
         results.append(
             MinimalSearchResults(
                 question_id=question.question_id,

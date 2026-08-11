@@ -179,8 +179,12 @@ def load_index(processed_dir: Path) -> Index:
                 f"index format {payload['version']} unsupported"
                 " - rebuild with 'uv run python -m src index'"
             )
+        # mmap avoids eagerly reading the postings arrays into memory -
+        # the fast cold-start load path (bonus #4). Measured negligible
+        # on this corpus (postings are a few MB), matters more at scale.
         scorer = bm25s.BM25.load(
-            str(processed_dir / SCORER_DIRNAME), show_progress=False
+            str(processed_dir / SCORER_DIRNAME),
+            mmap=True, show_progress=False,
         )
         return Index(
             max_chunk_size=payload["max_chunk_size"],

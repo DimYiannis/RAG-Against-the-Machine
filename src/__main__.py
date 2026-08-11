@@ -112,14 +112,22 @@ class RagCLI:
                 similarity over a previously built embedding matrix),
                 or "hybrid" (RRF fusion of both).
         """
-        from src import indexer, retriever
+        from src import cache, indexer, retriever
 
         index = indexer.load_index(Path(processed_directory))
-        embeddings_matrix, model = _load_semantic(mode, processed_directory)
-        ranked = retriever.top_k(
-            index, str(query), int(k),
-            mode=mode, embeddings=embeddings_matrix, model=model,
-        )
+        proc_dir = Path(processed_directory)
+        # cache check first: on a hit, the (possibly heavy) embedding
+        # model never gets loaded at all - the real cold-start win.
+        ranked = cache.get(proc_dir, str(query), int(k), mode)
+        if ranked is None:
+            embeddings_matrix, model = _load_semantic(
+                mode, processed_directory
+            )
+            ranked = retriever.top_k(
+                index, str(query), int(k),
+                mode=mode, embeddings=embeddings_matrix, model=model,
+            )
+            cache.put(proc_dir, str(query), int(k), mode, ranked)
         if not ranked:
             print("No results.")
             return
@@ -151,10 +159,12 @@ class RagCLI:
 
         index = indexer.load_index(Path(processed_directory))
         dataset = retriever.load_dataset(Path(dataset_path))
-        embeddings_matrix, model = _load_semantic(mode, processed_directory)
+        # cache_dir lets search_dataset check the query cache per
+        # question and only load the embedding model lazily on the
+        # first actual miss - an all-cache-hit rerun skips it entirely.
         results = retriever.search_dataset(
             index, dataset, int(k),
-            mode=mode, embeddings=embeddings_matrix, model=model,
+            mode=mode, cache_dir=Path(processed_directory),
         )
         target = retriever.save_results(
             results, Path(save_directory), Path(dataset_path).name
@@ -179,16 +189,20 @@ class RagCLI:
             processed_directory: Directory holding the built index.
             mode: "lexical" (bm25, default), "semantic", or "hybrid".
         """
-        from src import generator, indexer, retriever
+        from src import cache, generator, indexer, retriever
 
         index = indexer.load_index(Path(processed_directory))
-        embeddings_matrix, embedding_model = _load_semantic(
-            mode, processed_directory
-        )
-        ranked = retriever.top_k(
-            index, str(query), int(k),
-            mode=mode, embeddings=embeddings_matrix, model=embedding_model,
-        )
+        proc_dir = Path(processed_directory)
+        ranked = cache.get(proc_dir, str(query), int(k), mode)
+        if ranked is None:
+            embeddings_matrix, embedding_model = _load_semantic(
+                mode, processed_directory
+            )
+            ranked = retriever.top_k(
+                index, str(query), int(k), mode=mode,
+                embeddings=embeddings_matrix, model=embedding_model,
+            )
+            cache.put(proc_dir, str(query), int(k), mode, ranked)
         sources = [
             retriever.to_source(index, chunk_id) for chunk_id, _ in ranked
         ]
