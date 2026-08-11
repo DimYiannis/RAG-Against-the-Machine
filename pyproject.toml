@@ -6,7 +6,6 @@ dependencies = [
     "bm25s>=0.3.10",
     "fire>=0.7.1",
     "pydantic>=2.13.4",
-    "sentence-transformers>=5.7.0",
     "torch>=2.13.0",
     "tqdm>=4.68.4",
     "transformers>=5.14.1",
