@@ -150,6 +150,7 @@ def semantic_top_k(
         [query], convert_to_numpy=True, normalize_embeddings=True,
         show_progress_bar=False
     )[0].astype(np.float32)
+    # cosine similiarity
     sims = embeddings @ query_vec
     wanted = min(k, sims.shape[0])
     top_idx = np.argpartition(-sims, wanted - 1)[:wanted]
