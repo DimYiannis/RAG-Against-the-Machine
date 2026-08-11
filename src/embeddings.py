@@ -87,3 +87,43 @@ def build_embeddings(
     )
     return np.asarray(vectors, dtype=np.float32)
 
+
+def save_embeddings(matrix: np.ndarray, save_dir: Path) -> Path:
+    """
+        save embedding matrix next to the lexical index
+
+        args:
+            matrix
+            save_dir: same dir the bm25 index is
+
+        return:
+            path of written .npy file
+    """
+    save_dir.mkdir(parents=True, exist_ok=True)
+    target = save_dir / EMBEDDINGS_FILENAME
+    np.save(target, matrix)
+    return target
+
+
+def load_embeddings(save_dir: Path) -> np.ndarray:
+    """
+        load previously saved embedding matrix
+
+        args:
+            save_dir
+        return:
+            matrix
+    """
+    target = save_dir / EMBEDDINGS_FILENAME
+    if not target.is_file():
+        raise FileNotFoundError(
+            f"no embeddings at {target} "
+            "- run 'uv run python -m src index --mode semantic' first"
+        )
+    try:
+        return cast(np.ndarray, np.load(target))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"corrupt embeddings file {target}: {exc}") from exc
+
+
+
