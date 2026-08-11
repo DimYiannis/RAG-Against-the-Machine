@@ -57,4 +57,33 @@ def _get_chunks(index: Index, show_progress: bool = True) -> list[str]:
     return texts
 
 
+def build_embeddings(
+    index: Index,
+    model: SentenceTransformer | None = None,
+    batch_size: int = 64,
+    show_progress: bool = True
+) -> np.ndarray:
+    """
+        embed every chunk in the index
+
+        args:
+            index: chunk metadata
+            model
+            batch_size
+            show_progress
+
+        return:
+            l2-normalized matrix
+    """
+    if model is None:
+        model = load_model()
+    texts = _get_chunks(index, show_progress=show_progress)
+    vectors = model.encode(
+        texts,
+        batch_size=batch_size,
+        show_progress_bar=show_progress,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+    )
+    return np.asarray(vectors, dtype=np.float32)
 
