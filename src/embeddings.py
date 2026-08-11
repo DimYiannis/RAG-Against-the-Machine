@@ -126,4 +126,33 @@ def load_embeddings(save_dir: Path) -> np.ndarray:
         raise ValueError(f"corrupt embeddings file {target}: {exc}") from exc
 
 
+def semantic_top_k(
+    embeddings: np.ndarray,
+    model: SentenceTransformer,
+    query: str,
+    k: int,
+) -> list[tuple[int, float]]:
+    """
+        return the k best chunks for a query by cosine similarity
 
+        args:
+            embeddings
+            model
+            query: text question
+            k: number of results wanted
+
+            return:
+                (chunk_id, score) pairs, tie break on lower chunk id
+    """
+    if k <= 0 or embeddings.shape[0] == 0:
+        return []
+    query_vec = model.encode(
+        [query], convert_to_numpy=True, normalize_embeddings=True,
+        show_progress_bar=False
+    )[0].astype(np.float32)
+    sims = embeddings @ query_vec
+    wanted = min(k, sims.shape[0])
+    top_idx = np.argpartition(-sims, wanted - 1)[:wanted]
+    ranked = [(int(i), float(sims[i])) for i in top_idx]
+    ranked.sort(key=lambda item: (-item[1], item[0]))
+    return ranked
