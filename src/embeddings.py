@@ -16,6 +16,11 @@ from src.indexer import Index
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDINGS_FILENAME = "embeddings.npy"
+# NOTE: tried raising this model's default 256-token cap to 512 (the
+# underlying transformer's positional embeddings go that far). Measured
+# worse: recall dropped and embed time ~doubled (over the 5-min budget).
+# The model was fine-tuned specifically on <=256-token sequences, so
+# positions past that are out-of-distribution. Reverted - keep default.
 
 
 def load_model(model_name: str = MODEL_NAME) -> SentenceTransformer:
@@ -53,7 +58,8 @@ def _get_chunks(index: Index, show_progress: bool = True) -> list[str]:
         if file_path not in cache:
             with open(file_path, encoding="utf-8") as handle:
                 cache[file_path] = handle.read()
-        texts.append(cache[file_path][first:last])
+        chunk_text = cache[file_path][first:last]
+        texts.append(f"{file_path}\n{chunk_text}")
     return texts
 
 
