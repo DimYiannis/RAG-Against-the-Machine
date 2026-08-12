@@ -1,5 +1,5 @@
 """
-    query-results cache (bonus #4, second half): memoize
+    query-results cache: memoize
     (query, k, mode) -> ranked (chunk_id, score) results on disk, so a
     repeated query skips retrieval entirely on a later process.
 
