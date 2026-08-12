@@ -14,13 +14,6 @@ The pipeline: **index** the corpus → **retrieve** top-k spans for a question �
 **augment** the model's context with those spans → **generate** an answer → **evaluate**
 recall independently of the retrieval step.
 
-This branch (`main`) is the mandatory system: lexical retrieval only, via the
-[`bm25s`](https://github.com/xhluca/bm25s) library fed a custom identifier-aware
-tokenizer. Semantic embeddings, hybrid RRF fusion, and a query-results cache are
-implemented as bonuses on the **`semantic-hybrid`** branch (`git checkout
-semantic-hybrid`) — its own README documents them in full, including measured recall
-and timing numbers.
-
 ## Instructions
 
 Requires Python 3.10+ and [`uv`](https://docs.astral.sh/uv/).
@@ -50,21 +43,20 @@ Every command is `uv run python -m src <command> [options]`; see `make run` /
 
 ### AI usage
 
-Claude Code (Anthropic) was used as a pair-programming assistant throughout, following
+Claude Code was used as a pair-programming assistant throughout, following
 a fixed workflow: explain the rationale for any non-obvious block (AST walking, BM25
-scoring, offset math) in chat before/while writing it, one phase or module at a time,
+scoring, offset math) in chat before writing it, one phase or module at a time,
 and measure recall@k before/after any retrieval-affecting change rather than tuning
 blind.
 
-- **Chunking, tokenizer, indexer, retriever (mandatory):** built phase by phase with AI
+- **Chunking, tokenizer, indexer, retriever:** built phase by phase with AI
   pair-programming; every retrieval-affecting parameter (chunk size, `MIN_SECTION_SIZE`,
   `k1`/`b`, path-token indexing) was measured on the public datasets before being kept,
   with results logged as choice/alternative/why entries.
-- **This README and `docs/decisions.md`:** drafted by AI from the project's own commit
+- **This README:** drafted by AI from the project's own commit
   history, code, and the recall numbers measured during development; reviewed and
   corrected by the author.
-- **Bonus work (embeddings, hybrid, caching):** see the AI usage section on the
-  `semantic-hybrid` branch's README for that breakdown.
+
 
 Every generated block was read, questioned, and where necessary corrected before being
 accepted.
@@ -150,9 +142,6 @@ Two levers matter beyond the tokenizer itself:
 subtokens and path tokens), and results are re-sorted by `(score, -chunk_id)` for
 deterministic ties.
 
-The `semantic-hybrid` branch adds dense embeddings and RRF fusion on top of this same
-lexical retriever — see that branch's README for the method and measured results.
-
 ## Performance analysis
 
 Measured with the real CLI against both public datasets
@@ -184,21 +173,10 @@ default.
 
 ## Design decisions
 
-The full choice/alternative/why log lives in `docs/decisions.md` (kept locally,
-gitignored as defense-prep notes — this section is its polished summary). Highlights:
-
-- **`bm25s` library over a hand-rolled scorer:** keeps less scoring code on the graded
-  path; the hand-rolled version is kept on a separate `bm25-handrolled` branch as
-  reference — measured *identical* recall (0.8200/0.7576) once fed the same tokenizer
-  output, confirming the tokenizer/chunker were always the differentiator, not the
-  scoring loop.
 - **Chunk text is never stored in the index** — only `(file_path, first, last)`. Every
   consumer (generation, display) re-slices the corpus file, so spans are byte-identical
   by construction and the index stays small (~650KB pickle for 28k chunks).
-- **Bonus work lives on a separate `semantic-hybrid` branch, not `main`.** `main` stays
-  minimal and lexical-only — safe to grade, nothing to accidentally break the mandatory
-  path. The split was done with `git revert` (not a history rewrite), so the full
-  development history for the bonus work is preserved and reachable, just not on `main`.
+
 
 ## Challenges faced
 
@@ -229,10 +207,3 @@ uv run python -m src evaluate \
   --student_search_results_path data/output/search_results/UnansweredQuestions/dataset_docs_public.json \
   --dataset_path data/datasets/AnsweredQuestions/dataset_docs_public.json
 ```
-
-## Bonus work
-
-Implemented and measured on the **`semantic-hybrid`** branch (`git checkout
-semantic-hybrid`) — semantic embeddings (#1), hybrid RRF retrieval (#2), and a
-two-level cache (#4). See that branch's README for the method, CLI flags, and measured
-recall/timing numbers. Not implemented: #3 incremental indexing, #5 local HTTP API.
