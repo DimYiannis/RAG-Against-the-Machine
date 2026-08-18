@@ -1,11 +1,3 @@
-"""Command-line entry point for the RAG system.
-
-Exposes the six required commands through Python Fire. This module stays
-thin: each method validates nothing itself and delegates to the dedicated
-module once the corresponding phase is implemented. A single try/except
-at the boundary guarantees the CLI never exits with a raw traceback.
-"""
-
 import sys
 from pathlib import Path
 
@@ -13,7 +5,9 @@ import fire
 
 
 class RagCLI:
-    """RAG over the vLLM 0.10.1 codebase: index, search, answer, evaluate."""
+    """
+        RAG over the vLLM codebase: index, search, answer, evaluate.
+    """
 
     def index(
         self,
@@ -21,12 +15,13 @@ class RagCLI:
         data_directory: str = "data/raw",
         save_directory: str = "data/processed",
     ) -> None:
-        """Chunk the corpus and build the persisted inverted index.
+        """
+            chunk the corpus and build the persisted inverted index.
 
-        Args:
-            max_chunk_size: Maximum chunk span in characters (default 2000).
-            data_directory: Corpus root to ingest.
-            save_directory: Directory the index file is written into.
+            args:
+                max_chunk_size
+                data_directory
+                save_directory
         """
         from src import indexer
 
@@ -73,13 +68,14 @@ class RagCLI:
         save_directory: str = "data/output/search_results",
         processed_directory: str = "data/processed",
     ) -> None:
-        """Run retrieval for every question in a dataset and save results.
+        """
+            run retrieval for every question in a dataset and save results.
 
-        Args:
-            dataset_path: Path to a RagDataset JSON file.
-            k: Number of results to keep per question.
-            save_directory: Directory the results JSON is written into.
-            processed_directory: Directory holding the built index.
+            args:
+                dataset_path: path to a RagDataset JSON file.
+                k: num of results to keep per question.
+                save_directory: directory the results JSON is written into.
+                processed_directory: directory holding the built index.
         """
         from src import indexer, retriever
 
@@ -100,12 +96,13 @@ class RagCLI:
         k: int = 5,
         processed_directory: str = "data/processed",
     ) -> None:
-        """Retrieve top-k sources for a query and generate an answer.
+        """
+            retrieve top-k sources for a query and generate an answer.
 
-        Args:
-            query: Free-text question to answer.
-            k: Number of retrieved sources to ground the answer on.
-            processed_directory: Directory holding the built index.
+            args:
+                query: question to answer.
+                k: nums of retrieved sources to ground the answer on.
+                processed_directory: directory holding the built index.
         """
         from src import generator, indexer, retriever
 
@@ -125,11 +122,13 @@ class RagCLI:
         student_search_results_path: str,
         save_directory: str = "data/output/search_results_and_answer",
     ) -> None:
-        """Generate answers for previously saved search results.
+        """
+            generate answers for previously saved search results.
 
-        Args:
-            student_search_results_path: Path to a StudentSearchResults JSON.
-            save_directory: Directory the answered JSON is written into.
+            args:
+                student_search_results_path: path to a
+                    StudentSearchResults JSON.
+                save_directory: directory the answered JSON is written into.
         """
         from src import evaluator, generator
 
@@ -149,11 +148,13 @@ class RagCLI:
         student_search_results_path: str,
         dataset_path: str,
     ) -> None:
-        """Compute recall@k of saved search results against a reference.
+        """
+            compute recall@k of saved search results against a reference.
 
-        Args:
-            student_search_results_path: Path to a StudentSearchResults JSON.
-            dataset_path: Path to the reference RagDataset JSON.
+            args:
+                student_search_results_path: path to a
+                    StudentSearchResults JSON.
+                dataset_path: path to the reference RagDataset JSON.
         """
         from src import evaluator, retriever
 
