@@ -180,16 +180,19 @@ default.
 
 ## Challenges faced
 
-**Code recall was stuck at 0.667 until a miss audit found the real pattern.** Early on,
-code-question misses split roughly evenly between "wrong file" and "right file, wrong
-span" — but the wrong-file misses were disproportionately questions that *name* a file
-or module ("What does `gpu_model_runner.py`'s `execute_model` do?") rather than quoting
-code content. The filename itself never appeared in any chunk's tokens, so no amount of
-BM25 tuning on the existing index could fix it — the fix had to be at index time, not
-query time. Appending the tokenized corpus-relative path to every chunk of that file
-(path-token indexing) turned out to be the single biggest lever measured across the
-whole project: code recall@5 0.667 → 0.758, bigger than any `k1`/`b` or chunk-size
-change.
+**Code recall was stuck at 0.667 until a miss audit found the real pattern.** A miss
+audit on early misses (questions naming a file directly, e.g. *"What does
+`gpu_model_runner.py`'s `execute_model` do?"*) pointed at the root cause:
+
+- Code chunk (function body) rarely contains its own filename as text
+- Query naming that file → BM25 needs shared tokens, finds none → miss
+- Fix: tokenize the file path too, attach those tokens to every chunk from that file
+  (on top of the chunk's own code tokens)
+- Now filename-mentioning queries have something to match against
+
+This ended up being the single biggest lever measured across the whole project: code
+recall@5 **0.667 → 0.758**, a bigger jump than the `k1`/`b` grid search or the
+chunk-size sweep combined.
 
 ## Example usage
 
