@@ -101,7 +101,7 @@ def build_index(
             continue
         rel_path = Path(os.path.relpath(path)).as_posix()
         # path tokens let a chunk match questions that name its file
-        # (e.g. gpu_model_runner.py) without quoting any code content.
+        # (gpu_model_runner.py) without quoting any code content.
         path_tokens = tokenize(rel_path.removeprefix(f"{data_dir}/"))
         for chunk in chunk_text(text, rel_path, max_chunk_size):
             tokens = tokenize(chunk.text) + path_tokens
