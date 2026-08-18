@@ -28,8 +28,7 @@ SCORER_DIRNAME = "bm25s"
 # postings dict, v2 is metadata + a bm25s scorer directory.
 FORMAT_VERSION = 2
 
-# BM25 params, tuned in Phase 5. Unlike the hand-rolled scorer these are
-# baked in at *index* time by bm25s, so changing them needs a rebuild.
+# BM25 params -> maximized setting for my specific chunked corpus
 DEFAULT_K1 = 1.3
 DEFAULT_B = 0.85
 
