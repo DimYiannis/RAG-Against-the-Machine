@@ -196,6 +196,38 @@ chunk-size sweep combined.
 
 ## Example usage
 
+
+ Dataset dir: data/datasets_public/public/<DATASET>/
+ Each dataset has dataset_code_public.json + dataset_docs_public.json
+
+ AnsweredQuestions  -> has ground-truth `sources`. Use for retrieval recall eval.
+ UnansweredQuestions -> no `sources`. Use only for answer/generation, NOT recall.
+
+### 1. Build index from corpus
+```bash
+uv run python -m src index \
+  --data_directory data/raw \
+  --save_directory data/processed
+```
+
+### 2. Search dataset (retrieval for every question)
+  Output filename = input basename. Run once per file (code, docs).
+```bash
+uv run python -m src search_dataset \
+  --dataset_path data/datasets_public/public/AnsweredQuestions/dataset_docs_public.json \
+  --k 10 \
+  --save_directory data/output/search_results/AnsweredQuestions
+```
+### 3. Evaluate recall@k against reference
+  Both args = SAME dataset + SAME file (code<->code, docs<->docs).
+  Must be AnsweredQuestions (needs `sources`).
+```bash
+./moulinette-ubuntu evaluate_student_search_results \
+  data/output/search_results/AnsweredQuestions/dataset_docs_public.json \
+  data/datasets_public/public/AnsweredQuestions/dataset_docs_public.json \
+  --k 10
+```
+### other commands
 ```bash
 uv run python -m src index --max_chunk_size 2000
 uv run python -m src search "How to configure the OpenAI server?" --k 5
