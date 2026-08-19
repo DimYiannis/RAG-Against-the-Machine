@@ -162,7 +162,9 @@ def generate_answer(
         enable_thinking=False,
     )
     inputs = tokenizer(prompt, return_tensors="pt")
-   
+    # avoid gradient tracking and backprop, only inference
+    with torch.no_grad():
+        # transformers' generate() stub resolves oddly against **inputs
         output_ids = model.generate(  # type: ignore[operator]
             **inputs,
             max_new_tokens=max_new_tokens,
