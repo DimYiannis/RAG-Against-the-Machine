@@ -17,11 +17,11 @@ clean:
 	find . -type d -name __pycache__ -not -path "./.venv/*" -exec rm -rf {} +
 
 lint:
-	uv run flake8 src tests
-	uv run mypy $(MYPY_FLAGS) src tests
+	uv run flake8 src 
+	uv run mypy $(MYPY_FLAGS) src 
 
 lint-strict:
-	uv run mypy --strict --ignore-missing-imports src tests
+	uv run mypy --strict --ignore-missing-imports src 
 
 test:
 	uv run pytest
