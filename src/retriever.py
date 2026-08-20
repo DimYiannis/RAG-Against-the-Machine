@@ -16,7 +16,7 @@ from src.models import (
     RagDataset,
     StudentSearchResults,
 )
-from src.tokenizer import tokenize
+from src.tokenizer import strip_stopwords, tokenize
 
 
 def top_k(index: Index, query: str, k: int) -> list[tuple[int, float]]:
@@ -39,6 +39,10 @@ def top_k(index: Index, query: str, k: int) -> list[tuple[int, float]]:
     terms = list(dict.fromkeys(tokenize(query)))
     if not terms:
         return []
+    # Stopwords are dropped from the query but kept in the index: removing
+    # them from the index would change every chunk length and every idf,
+    # Filtering the query changes only which terms we ask about.
+    terms = strip_stopwords(terms)
     # bm25s errors if asked for more documents than it holds.
     wanted = min(k, index.doc_count)
     ids, scores = index.scorer.retrieve(
