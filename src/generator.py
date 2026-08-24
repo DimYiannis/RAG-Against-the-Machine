@@ -2,15 +2,15 @@
     grounded answer generation with Qwen3-0.6B.
 
     sources are re-sliced from the corpus files they point at (chunk text
-    is never stored in the index, only offsets), 
-    assembled into a numbered context block, and handed to the model behind a system
-    prompt that forbids answering from outside knowledge. 
-    
-    Sources are kept best-ranked first and dropped worst-ranked first when the assembled
-    context would exceed the token budget, since the retriever already
-    orders them by relevance.
+    is never stored in the index, only offsets),
+    assembled into a numbered context block, and handed to the model
+    behind a system prompt that forbids answering from outside knowledge.
 
-    chunkcmetadata -> reslice corpus -> context block -> prompt -> grounded response
+    Sources are kept best-ranked first and dropped worst-ranked first
+    when the assembled context would exceed the token budget, since the
+    retriever already orders them by relevance.
+
+    chunk metadata -> reslice corpus -> context block -> prompt -> answer
 """
 
 from pathlib import Path
@@ -50,6 +50,7 @@ SYSTEM_PROMPT = (
 # default answer when no source is gathered
 NO_SOURCES_ANSWER = "No sources were available to answer this question."
 
+
 def load_model(
     model_name: str = DEFAULT_MODEL,
 ) -> tuple[PreTrainedTokenizerBase, PreTrainedModel]:
@@ -58,7 +59,7 @@ def load_model(
 
         args:
             model_name
-        
+
         return:
             tokenizer and model
     """
@@ -67,6 +68,7 @@ def load_model(
     model = AutoModelForCausalLM.from_pretrained(model_name)
     model.eval()
     return tokenizer, model
+
 
 def _source_block(source: MinimalSource) -> str | None:
     """
@@ -82,6 +84,7 @@ def _source_block(source: MinimalSource) -> str | None:
     span = text[source.first_character_index:source.last_character_index]
     return f"[{source.file_path}]\n{span}"
 
+
 def _fit_sources(
     tokenizer: PreTrainedTokenizerBase,
     sources: list[MinimalSource],
@@ -92,16 +95,17 @@ def _fit_sources(
         select source blocks that fit the token budget
 
         args:
-            tokenizer: tokenizer used to count tokens 
+            tokenizer: tokenizer used to count tokens
                 (must match the generation model, since token
                 counts are model-specific)
             sources: retrieved sources, best ranked first
             max_context_tokens: cap on the assembled context
-        
+
         return:
             text blocks in ranked order, worst ranked ones are dropped first
             once the budget is exceeded.
-            allways keep the first avalaible block even if the budget is exceeded
+            always keep the first available block even if the budget
+            is exceeded,
             so a question with sources never gets an empty context
     """
     blocks: list[str] = []
@@ -116,6 +120,7 @@ def _fit_sources(
         blocks.append(block)
         used_tokens += n_tokens
     return blocks
+
 
 def generate_answer(
     tokenizer: PreTrainedTokenizerBase,
@@ -135,7 +140,7 @@ def generate_answer(
             sources: retrieved sources, best-ranked first
             max_context_tokens
             max_new_tokens
-        
+
         return:
             model's answer or fixed response if no source was recovered
     """
@@ -159,7 +164,7 @@ def generate_answer(
     inputs = tokenizer(prompt, return_tensors="pt")
     # avoid gradient tracking and backprop, only inference
     with torch.no_grad():
-        # transformers' generate() stub resolves oddly against **inputs unpacking
+        # transformers' generate() stub resolves oddly against **inputs
         output_ids = model.generate(  # type: ignore[operator]
             **inputs,
             max_new_tokens=max_new_tokens,
@@ -169,6 +174,7 @@ def generate_answer(
     new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
     decoded = str(tokenizer.decode(new_tokens, skip_special_tokens=True))
     return decoded.strip()
+
 
 def answer_results(
     tokenizer: PreTrainedTokenizerBase,
@@ -208,6 +214,7 @@ def answer_results(
         )
     return StudentSearchResultsAndAnswer(search_results=answers, k=results.k)
 
+
 def save_answers(
     results: StudentSearchResultsAndAnswer, save_directory: Path, filename: str
 ) -> Path:
@@ -218,7 +225,7 @@ def save_answers(
             results: results to serialize
             save_directory
             filename
-        
+
         return
             path of the written file
     """
