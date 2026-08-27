@@ -24,6 +24,7 @@
 - [Features Implemented](#-features-implemented)
 - [Performance Analysis](#-performance-analysis)
 - [Challenges Faced](#-challenges-faced)
+- [Limitations & Future Improvements](#-limitations--future-improvements)
 - [Testing Strategy](#-testing-strategy)
 - [Example Usage](#-example-usage)
 - [Resources](#-resources)
@@ -476,13 +477,48 @@ about. Punctuation and single characters needed no work — the tokenizer alread
 Result: on the harder datasets, docs recall@5 **0.7900 → 0.8100** (clearing the 0.80
 bar) and code **0.7400 → 0.7600**, with the public numbers unchanged at 0.8200 / 0.7576.
 
-**Further improvement worth exploring:** a **corpus-derived** stoplist (terms in more
-than 16% of chunks) also catches domain stopwords an English list misses — `py`, `def`,
-`self`, `torch`, `model`.
+See [Limitations & Future Improvements](#-limitations--future-improvements) for where
+this stopword fix falls short and what would replace it.
+
+## ⚠️ Limitations & Future Improvements
+
+**Real-world query robustness gaps.** The graded datasets don't contain intentionally
+misspelled or shorthand queries, so these don't show up in the recall numbers above —
+but they're real gaps a live reviewer could hit:
+
+- **No spelling-mistake tolerance.** BM25 is exact-token matching against the vocabulary
+  built at index time; a typo'd term (`instalation` vs `installation`) shares zero
+  tokens with anything indexed and contributes nothing to the score. There's no
+  fuzzy/edit-distance matching or spell-correction step anywhere in this pipeline.
+- **No abbreviation or shorthand normalization.** A query written as `4you` instead of
+  `for you`, or `k8s` instead of `kubernetes`, tokenizes to a string the corpus never
+  contains — it's simply dropped as dead weight, since there's no synonym table or
+  normalization layer to bridge slang/shorthand to the corpus's actual vocabulary.
+- **No paraphrase understanding on pure lexical retrieval.** A question that describes a
+  concept without using the corpus's own words has no lexical signal to retrieve on at
+  all — the gap the `semantic-hybrid` branch's embedding retriever targets, with mixed
+  results (see that branch's README).
+
+These are all consequences of the same root cause: retrieval here is surface-token
+matching, not meaning matching. Closing them for real usage (not just the graded sets)
+would need a normalization/spell-correction pass before tokenization, or leaning further
+into the semantic side already prototyped on `semantic-hybrid`.
+
+**Future improvement — retire the fixed stopword list for a corpus-derived cutoff.** The
+current fix (see [Design Decisions](#-design-decisions)) strips a hand-picked English
+stopword list from queries. That list is not a fully reliable technique for a general
+system: it's manually curated, English-only, and blind to domain-specific noise words
+that behave exactly like stopwords in *this* corpus without being dictionary stopwords —
+`self`, `def`, `torch`, `model` are near-ubiquitous in Python source and inflate scores
+the same way `the`/`for` do, but none of them are in a standard English list. 
+<u>A better-founded replacement: at index time, compute each term's document frequency and
+exclude any query term whose corpus DF exceeds a threshold (~20% of chunks)</u> — the same
+frequency signal `idf` already computes, reused directly, instead of a maintained word
+list. This generalizes to any corpus or language with no hand-curation. The intent is to replace the fixed list with this threshold outright, not run
+both — a curated list layered on top of a corpus-derived cutoff is redundant and just
+adds a second thing to maintain.
 
 ## 🧪 Testing Strategy
-
-`tests/` (pytest, not graded, kept for defense confidence):
 
 - `test_chunking.py` — the offset round-trip invariant on real corpus files
   (`text[first:last] == chunk.text`), the one test that must always pass before any
