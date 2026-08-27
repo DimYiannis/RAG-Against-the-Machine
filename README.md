@@ -228,13 +228,25 @@ entirely (see timings below).
 
 ## 📊 Performance Analysis
 
-Measured with the real CLI against both public datasets (k=5, IoU>0.05 match bar):
+Measured with the real CLI (k=5, IoU>0.05 match bar), after porting `main`'s query
+stopword-stripping fix onto this branch (see [Challenges Faced](#-challenges-faced)):
 
-| mode | docs recall@5 | code recall@5 |
-|---|---|---|
-| lexical (same as `main`) | 0.8200 (82/100) | 0.7576 (75/99) |
-| semantic | 0.5800 | 0.5152 |
-| hybrid | 0.7800 | 0.7273 |
+| mode | public docs | public code | private docs | private code |
+|---|---|---|---|---|
+| lexical (same as `main`) | 0.8200 (82/100) | 0.7576 (75/99) | 0.8100 (81/100) | 0.7600 (76/100) |
+| semantic | 0.5800 (58/100) | 0.5152 (51/99) | 0.6700 (67/100) | 0.4100 (41/100) |
+| hybrid | 0.7500 (75/100) | 0.7172 (71/99) | **0.8400** (84/100) | 0.7000 (70/100) |
+
+Semantic is unaffected by the stopword fix (it embeds the raw query text, never calls
+`tokenize`/`strip_stopwords`) — the public numbers above match the pre-fix measurement
+exactly, a useful sanity check that the change stayed scoped to the lexical path.
+Hybrid did shift, in both directions: public dropped slightly (0.7800→0.7500,
+0.7273→0.7172) while private docs jumped to 0.8400 and private code eased to 0.7000.
+The mechanism is RRF's candidate pool, not the fusion math — stopword-stripping changes
+*which* chunks land in lexical's top-100 candidates and at what rank, and hybrid fuses
+whatever that pool is; both sides still clear the mandatory bars (0.80 docs / 0.50 code)
+by a wide margin on every dataset. See [Challenges Faced](#-challenges-faced) for the
+before/after detail.
 
 Chunk-size tuning (2000/600 vs. 1000/200) is mandatory-side work — see `main`'s README.
 
@@ -298,15 +310,44 @@ Worth adding before a live demo if time allows.
 
 ## 💡 Example Usage
 
-Mandatory commands are identical to `main` (see that README). Bonus:
+Mandatory commands are identical to `main` (see that README). Bonus, build the index
+with embeddings once:
 
 ```bash
-uv run python -m src index --max_chunk_size 2000 --mode hybrid
-uv run python -m src search "How to configure the OpenAI server?" --k 5 --mode hybrid
-uv run python -m src search_dataset \
-  --dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json \
-  --k 5 --mode hybrid --save_directory data/output/search_results/UnansweredQuestions
+uv run python -m src index --max_chunk_size 2000 --mode hybrid   # also builds embeddings.npy
 ```
+
+### Search + evaluate — hybrid
+
+```bash
+uv run python -m src search_dataset \
+  --dataset_path data/datasets/public/UnansweredQuestions/dataset_docs_public.json \
+  --k 5 --mode hybrid \
+  --save_directory data/output/search_results/public/UnansweredQuestions
+
+uv run python -m src evaluate \
+  --student_search_results_path data/output/search_results/public/UnansweredQuestions/dataset_docs_public.json \
+  --dataset_path data/datasets/public/AnsweredQuestions/dataset_docs_public.json
+```
+
+### Search + evaluate — semantic
+
+```bash
+uv run python -m src search_dataset \
+  --dataset_path data/datasets/public/UnansweredQuestions/dataset_docs_public.json \
+  --k 5 --mode semantic \
+  --save_directory data/output/search_results/public/UnansweredQuestions
+
+uv run python -m src evaluate \
+  --student_search_results_path data/output/search_results/public/UnansweredQuestions/dataset_docs_public.json \
+  --dataset_path data/datasets/public/AnsweredQuestions/dataset_docs_public.json
+```
+
+`evaluate` reads `k`/results straight off the saved file, so it doesn't take a `--mode`
+flag itself — just point it at whichever mode's output you saved. Swap `docs`→`code` or
+`public`→`private` in both paths to run the other datasets (see
+[Performance Analysis](#-performance-analysis) for the full set of numbers this
+produces).
 
 ## 📎 Resources
 
