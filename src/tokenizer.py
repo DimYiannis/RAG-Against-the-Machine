@@ -21,6 +21,25 @@ WORD_RE = re.compile(r"[A-Za-z0-9_]+")
 # piece into CamelCase/acronym-aware subwords:
 CAMEL_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
 
+# standard english stopword list, stripped from QUERIES only. every
+# question contains these, so they can't separate one chunk from another
+# - yet BM25 still adds a document-dependent amount for each, which ranks
+# on whichever chunk repeats them most. long source files do exactly
+# that, which is how prose questions ended up answered by .py files.
+# deliberately the ordinary english list (not corpus-fitted) so it
+# transfers to any corpus. single-character words are absent because
+# _keep already drops them.
+STOPWORDS = frozenset("""
+about above after again against all am an and any are as at be because been
+before being below between both but by can did do does doing down during each
+few for from further had has have having he her here hers herself him himself
+his how if in into is it its itself just me more most my myself no nor not now
+of off on once only or other our ours ourselves out over own same she should so
+some such than that the their theirs them themselves then there these they this
+those through to too under until up very was we were what when where which
+while who whom why will with you your yours yourself yourselves
+""".split())
+
 
 def tokenize(text: str) -> list[str]:
     """
@@ -51,6 +70,21 @@ def tokenize(text: str) -> list[str]:
             if part_lower != lowered and _keep(part_lower):
                 tokens.append(part_lower)
     return tokens
+
+
+def strip_stopwords(terms: list[str]) -> list[str]:
+    """
+        drop english stopwords from a query's term list
+
+        args:
+            terms: tokenized query terms
+
+        return:
+            the discriminative terms, or the original list when every
+            term is a stopword - a degraded ranking beats no results
+    """
+    kept = [term for term in terms if term not in STOPWORDS]
+    return kept or terms
 
 
 def _keep(token: str) -> bool:
