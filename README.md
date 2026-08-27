@@ -1,21 +1,104 @@
 *This project has been created as part of the 42 curriculum by ydimitra.*
 
-# RAG Against the Machine
+# RAG Against the Machine — `semantic-hybrid` branch
 
-## Description
+![42](https://img.shields.io/badge/42-Codam-000000?style=flat)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)
+![uv](https://img.shields.io/badge/uv-managed-DE5FE9?style=flat)
+![bm25s](https://img.shields.io/badge/lexical-bm25s-blue?style=flat)
+![sentence-transformers](https://img.shields.io/badge/semantic-MiniLM--L6--v2-green?style=flat)
+![bonus](https://img.shields.io/badge/bonus-%231%20%232%20%234-purple?style=flat)
 
-A Retrieval-Augmented Generation system over the [vLLM 0.10.1](https://github.com/vllm-project/vllm)
-codebase. Given a natural-language question, it retrieves the most relevant source
-locations (file + character span) and generates a grounded answer with
-`Qwen/Qwen3-0.6B`, measured via recall@k.
+*Fusing BM25 with a bi-encoder, rank by rank — plus the two caches that make repeated queries on this branch nearly free.*
 
-This branch (`semantic-hybrid`) carries the full mandatory system **plus** three
-bonuses: semantic embeddings (#1), hybrid RRF fusion (#2), and a two-level cache (#4).
-For the mandatory-only description, architecture, chunking/tokenizer detail, and
-design rationale, see the **`main`** branch's README — this one focuses on what's
-different/added here and doesn't repeat that prose.
+This is the **bonus branch**. It carries the full mandatory system plus semantic
+embeddings (#1), hybrid RRF fusion (#2), and a two-level cache (#4), and is kept
+separate from `main` on purpose — see [What is this branch?](#-what-is-this-branch)
+for why.
 
-## Instructions
+## 📑 Table of Contents
+- [What is this branch?](#-what-is-this-branch)
+- [Project Structure — what's new here](#-project-structure--whats-new-here)
+- [Reading Order — Where to Start](#-reading-order--where-to-start)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [The Makefile](#-the-makefile)
+- [Algorithm Explanation — Semantic Embeddings, Hybrid RRF & Caching](#-algorithm-explanation--semantic-embeddings-hybrid-rrf--caching)
+- [Design Decisions](#-design-decisions)
+- [Features Implemented](#-features-implemented)
+- [Performance Analysis](#-performance-analysis)
+- [Challenges Faced](#-challenges-faced)
+- [Testing Strategy](#-testing-strategy)
+- [Example Usage](#-example-usage)
+- [Resources](#-resources)
+
+## 🧩 What is this branch?
+
+`main` is the validated mandatory system: lexical (BM25) retrieval only, measured at
+docs recall@5 0.8200 / code recall@5 0.7576, both clear of the subject's bars. This
+branch adds three bonuses on top of it — a semantic (embedding) retriever, a hybrid
+mode that fuses semantic with lexical via Reciprocal Rank Fusion, and a two-level cache
+covering all three modes — without touching `main`'s mandatory behaviour.
+
+It's kept as a separate branch rather than merged, for a specific, measured reason:
+**hybrid underperforms pure lexical on both public datasets** (0.7800/0.7273 vs.
+0.8200/0.7576 — see [Performance Analysis](#-performance-analysis)). `main` must stay
+the graded, tuned baseline; this branch is where the bonus work lives, demonstrable and
+independently measured, without putting the mandatory bar at risk.
+
+This README is deliberately a **delta**, not a duplicate — it documents what's added or
+changed on this branch only. For the mandatory-only description, chunking/tokenizer
+detail, and BM25 design rationale, see **`main`**'s README; nothing there is repeated
+here.
+
+## 🗂 Project Structure — what's new here
+
+Same top-level layout as `main` (`src/`, `tests/`, `docs/`, `data/`), plus:
+
+<details>
+<summary><strong>📁 src/</strong> — two new modules on top of <code>main</code></summary>
+
+| file | purpose |
+|---|---|
+| `embeddings.py` | *new* — loads `all-MiniLM-L6-v2`, embeds/persists/queries the `(n_chunks, 384)` matrix, semantic top-k via cosine similarity |
+| `cache.py` | *new* — sqlite query-results cache keyed on `(query, k, mode)`, fingerprinted on the index files' mtime+size |
+| `retriever.py` | *changed* — gained `mode: "lexical" \| "semantic" \| "hybrid"` and `fuse()` (Reciprocal Rank Fusion) |
+| `indexer.py` | *changed* — `bm25s.BM25.load(..., mmap=True)` fast-load path for the index cache |
+| `__main__.py` | *changed* — every command gained an optional `--mode` flag; cache is checked before the embedding model loads |
+
+Every other `src/` file (`models.py`, `tokenizer.py`, `chunking.py`, `generator.py`,
+`evaluator.py`) is unchanged from `main`.
+
+</details>
+
+<details>
+<summary><strong>📁 data/processed/</strong> — two new artifacts (gitignored, local only)</summary>
+
+```
+data/processed/
+├── index.pkl / bm25s postings   # unchanged from main
+├── embeddings.npy               # new — (28246, 384) float32 matrix, L2-normalized
+└── query_cache.db               # new — sqlite, (query,k,mode) -> ranked results
+```
+
+</details>
+
+## 📖 Reading Order — Where to Start
+
+Assumes you've already read `main`'s modules (`models.py` → `tokenizer.py` →
+`chunking.py` → `indexer.py` → `retriever.py` → `generator.py` → `evaluator.py`). On
+top of that, for this branch:
+
+1. **`embeddings.py`** — how a chunk becomes a 384-dim row, and how a query becomes a
+   ranked list via a single matrix-vector product.
+2. **`retriever.fuse()`** — Reciprocal Rank Fusion: how two independently-ranked lists
+   (lexical, semantic) become one.
+3. **`cache.py`** — the `(query, k, mode)` key, the fingerprint invalidation rule, and
+   why a miss must never raise.
+4. **`__main__.py`** — where the cache check is wired in *before* `_load_semantic()`,
+   the detail that makes a warm hit skip loading the embedding model entirely.
+
+## ⚙️ Installation
 
 Same as `main`: Python 3.10+, [`uv`](https://docs.astral.sh/uv/).
 
@@ -24,127 +107,126 @@ make install && make lint && make test
 ```
 
 Place the corpus under `data/raw/vllm-0.10.1/` and datasets under
-`data/datasets/{UnansweredQuestions,AnsweredQuestions}/` before indexing (`data/` is
+`data/datasets/{UnansweredQuestions,AnsweredQuestions}/` before indexing (`data/` stays
 gitignored). One thing specific to this branch: `--mode semantic`/`hybrid` on `index`
-also builds `data/processed/embeddings.npy` — budget ~5 min combined (see Performance
-analysis).
+also builds `data/processed/embeddings.npy` — budget ~5 minutes combined, see
+[Performance Analysis](#-performance-analysis).
 
-## Resources
+## ▶️ Usage
 
-Bonus-specific, on top of `main`'s list:
+Same six commands as `main`, all gaining an optional `--mode lexical|semantic|hybrid`
+(default `lexical`, reproduces the mandatory behaviour exactly — byte-identical output
+to `main` when omitted):
 
-- [Sentence-Transformers](https://www.sbert.net/) documentation — `all-MiniLM-L6-v2`, bi-encoder embeddings.
-- Cormack, Clarke & Buettcher (2009), [*Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods*](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) — the RRF formula used for hybrid fusion.
-
-### AI usage
-
-Same workflow as `main` (see that README for the mandatory-phase breakdown): explain
-rationale before/while writing, one module at a time, measure before/after any
-retrieval-affecting change. Bonus-specific:
-
-- **Semantic embeddings + hybrid RRF (#1/#2):** AI drafted the initial
-  `embeddings.py`/`fuse()` implementation; a manual review found and fixed several bugs
-  (typos, wrong return types, flake8/mypy violations) before it ran. When hybrid first
-  underperformed pure lexical retrieval, AI helped isolate the root cause (the embedding
-  model's 256-token cap silently truncating our ~2000-char chunks, and the lack of a
-  path-token equivalent on the semantic side) through targeted experiments, each
-  measured independently, rather than guessing at a fix.
-- **Caching (#4):** AI proposed keying the cache on `(query, k, mode)` with an
-  index-fingerprint invalidation scheme, then implemented and measured it (cold vs. warm
-  timings below), confirming cold/warm outputs are byte-identical before accepting it.
-- **Git history restructuring:** splitting bonus work onto this branch (keeping `main`
-  lexical-only) was done via a non-destructive `git revert` at the user's direction.
-
-Every generated block was read, questioned, and where necessary corrected before being
-accepted — see "Challenges faced" for a concrete example (the hybrid regression) where
-the first AI-proposed fix was tested, measured, and reverted before the second was tried.
-
-## System architecture
-
-Same pipeline as `main` (CLI → indexer → retriever → generator/evaluator), with two
-additions layered on top:
-
-```
-   ├── index ─────────► indexer.py  (unchanged)
-   │                     + embeddings.py (SentenceTransformer → .npy matrix)
-   │
-   ├── search /
-   │   search_dataset ─► retriever.py  top_k() / search_dataset()
-   │                     mode="lexical"  → bm25s.retrieve()          (unchanged)
-   │                     mode="semantic" → embeddings.semantic_top_k() (cosine similarity)
-   │                     mode="hybrid"   → both, fused by retriever.fuse() (RRF)
-   │                     cache.py checked first: (query,k,mode) → cached result
-```
-
-**Command-Line Interface** — same six commands as `main`, all gaining an optional
-`--mode lexical|semantic|hybrid` (default `lexical`, reproduces the mandatory behaviour
-exactly):
-
-| command | new flag |
+| command | new flag on this branch |
 |---|---|
 | `index --max_chunk_size <int> --mode ...` | `semantic`/`hybrid` also builds `embeddings.npy` |
-| `search <query> --k <int> --mode ...` | |
-| `search_dataset --dataset_path <path> --k <int> --save_directory <dir> --mode ...` | |
+| `search <query> --k <int> --mode ...` | checks the query cache before loading any model |
+| `search_dataset --dataset_path <path> --k <int> --save_directory <dir> --mode ...` | same cache check, per question |
 | `answer <query> --k <int> --mode ...` | |
+| `answer_dataset` / `evaluate` | unchanged from `main` |
 
-`--mode` only exists on this branch — `main` carries no code path that would use it.
+## 🛠 The Makefile
 
-## Chunking strategy
+Same targets as `main`, with one difference: `lint`/`lint-strict` cover `tests/` too on
+this branch (`main` lints `src` only).
 
-Unchanged from `main` — two chunkers (AST-based for `.py`, header-based for
-`.md`/`.rst`/`.txt`), both capped at `max_chunk_size`, offsets as ground truth. See
-`main`'s README for the full writeup; this branch adds nothing here.
+| command | what it does |
+|---|---|
+| `make install` | `uv sync` |
+| `make run` | Runs `uv run python -m src` |
+| `make debug` | Runs the CLI under `pdb` |
+| `make lint` | `flake8` + `mypy` over `src tests` |
+| `make lint-strict` | `mypy --strict --ignore-missing-imports` over `src tests` |
+| `make clean` | Removes `__pycache__`, `.mypy_cache`, `.pytest_cache` |
+| `make test` | Runs the pytest suite |
 
-## Retrieval method
+## 🧠 Algorithm Explanation — Semantic Embeddings, Hybrid RRF & Caching
 
-**Lexical:** unchanged from `main` (custom tokenizer, path-token indexing, `bm25s`
-`k1=1.3, b=0.85`) — see that README for the full method and the 0.667→0.758 path-token
-result.
+**Semantic retrieval (`embeddings.py`):** every chunk is embedded with
+`all-MiniLM-L6-v2` (384-dim, CPU-friendly), rows L2-normalized at encode time so cosine
+similarity reduces to a single matrix-vector dot product at query time
+(`embeddings @ query_vec`, `np.argpartition` for top-k rather than a full sort). Chunk
+text is prefixed with its file path before embedding — the semantic-side equivalent of
+`main`'s path-token indexing, since a bi-encoder has no other way to see a filename; this
+alone lifted semantic recall@5 from docs 0.53→0.58, code 0.37→0.52.
 
-**Semantic:** every chunk is embedded with `all-MiniLM-L6-v2` (384-dim, CPU),
-rows L2-normalized so cosine similarity reduces to a single matrix-vector dot product at
-query time (`np.argpartition` for top-k, not a full sort). Chunk text is prefixed with
-its file path before embedding — the semantic equivalent of path-token indexing, since a
-bi-encoder has no other way to see a filename.
+**Hybrid fusion (`retriever.fuse()`):** Reciprocal Rank Fusion of the lexical and
+semantic rankings — `RRF(d) = Σ 1/(c + rank_i(d))` summed over both retrievers,
+1-based ranks, `c=60` (the Cormack et al. standard constant), top-100 candidates pulled
+from each side before fusing, sorted desc with a `(score, chunk_id)` tie-break. Rank-based
+fusion needs no cross-scale normalization between BM25 scores and cosine similarities —
+simpler to implement and to defend than score-mixing.
 
-**Hybrid:** Reciprocal Rank Fusion of the lexical and semantic rankings —
-`RRF(d) = Σ 1/(c + rank_i(d))` over both retrievers, 1-based ranks, `c=60` (Cormack et
-al. standard), top-100 candidates pulled from each side before fusing. Rank-based fusion
-needs no cross-scale normalization between BM25 and cosine scores.
+**Caching (`cache.py` + `indexer.py`):** two independent caches, per subject ch. IX #4.
 
-## Caching
-
-
-**Index cache (cold start).** Every `uv run python -m src ...` is a fresh process, so an
-in-memory cache would prove nothing across calls; the win has to be on disk.
-`bm25s.BM25.load(..., mmap=True)` memory-maps the postings instead of reading them
-eagerly (`indexer.py`).
-
-**Query-results cache (repeated queries).** A sqlite table under `data/processed/` maps a
-request to its `(chunk_id, score)` list (`cache.py`). Four things make it correct:
-
-- **The key is `sha256(mode ∥ k ∥ query)` — exact, never "similar".** There is one table
-  for all modes, not one cache per mode; `mode` and `k` are *inside* the key so a hybrid
-  result can never be served for a lexical query, or a `k=10` result for `k=5`. Fuzzy or
-  semantic key matching is deliberately avoided: it could return something other than
-  what a cold run would, and the whole rule of this bonus is that **caching changes speed
-  only, never results**.
-- **Invalidation by fingerprint.** Each row is tagged with a hash of the mtime and size of
-  `index.pkl` (plus `embeddings.npy` when present). Re-indexing changes the fingerprint,
-  so stale rows simply stop matching and `put()` sweeps them — serving stale results after
-  a re-index is exactly what a reviewer probes for.
+- **Index cache (cold start):** `bm25s.BM25.load(..., mmap=True)` memory-maps the
+  postings instead of reading them eagerly — the format chosen back in Phase 4 (pickle
+  metadata + `bm25s`' own npy/json, not one big pickle) was already fast; mmap is free
+  extra headroom.
+- **Query-results cache (repeated queries):** a sqlite table maps
+  `sha256(mode ∥ k ∥ query)` → the `(chunk_id, score)` list. `mode` and `k` are *inside*
+  the key so a hybrid result can never be served for a lexical query, or `k=10` for
+  `k=5` — one table for every mode, never fuzzy-matched. Each row is fingerprinted on the
+  mtime+size of `index.pkl` (+ `embeddings.npy` when present); re-indexing changes the
+  fingerprint, so stale rows stop matching and `put()` sweeps them.
 - **The cache is checked before anything heavy loads.** The obvious place to cache is
   inside `top_k()`, but by then the embedding model is already in memory. Since loading
   `SentenceTransformer` costs ~4.3s against ~30ms for the index, the lookup happens in
-  `__main__.py` *before* the model is touched — which is why a warm run skips it entirely.
-- **A missing or corrupt cache is a miss, never an error.** `get()` swallows database and
-  OS errors and returns `None`, so the CLI degrades to a normal cold query rather than
-  crashing. Caching is an optimization, not a correctness dependency.
+  `__main__.py` *before* `_load_semantic()` runs — the reason a warm hit skips model
+  loading entirely, not just re-scoring.
+- **A missing or corrupt cache is a miss, never an error.** `get()` swallows database
+  and OS errors and returns `None`; the CLI degrades to a normal cold query rather than
+  crashing.
 
-Measured below: ~24x on a repeated single query, ~31x over a 100-question dataset, with
-output verified byte-identical to the cold run.
+## 🧭 Design Decisions
 
-## Performance analysis
+Bonus-specific decisions, on top of `main`'s (see that README for the mandatory-side
+log):
+
+- **Chunk text re-sliced from disk at embed time, not stored** — cache text alongside
+  the embedding matrix — same invariant as the lexical index: offsets are ground truth,
+  and one extra read per file (not per chunk) is cheap next to the encode cost.
+- **`np.argpartition` for semantic top-k, not a full sort** — mirrors `main`'s
+  `heapq.nlargest` discipline: O(n) partial partition over ~28k rows, sort only the
+  k-sized slice.
+- **RRF over score-mixing** — normalizing BM25 and cosine onto a shared scale — rank-based
+  fusion needs no cross-scale normalization and matches the subject's suggested formula;
+  simpler to defend.
+- **`mode` threaded through `retriever.top_k`/`search_dataset`, default `"lexical"`** —
+  a separate hybrid-only function — keeps the mandatory path byte-identical to `main`
+  (verified: a default-mode call takes the same branch as before this change) while
+  every command gains an optional `--mode` flag.
+- **sqlite3 for the query cache** — shelve/json — stdlib, no new dependency, a normal
+  key-value table under `data/processed/`.
+- **Cache check happens before the model loads, not inside `top_k`** — wrap caching
+  around `top_k` internally — if `top_k` did its own cache-around, the embedding model
+  would already be loaded by the time it's called, so a hit would still pay the 4.3s
+  cost it exists to avoid.
+
+## Features Implemented
+
+This branch *is* the verification — everything below runs directly from here.
+
+| Feature | Status | Where |
+|---|---|---|
+| Semantic embeddings (bonus #1) | ✅ built & measured | `src/embeddings.py` |
+| Hybrid retrieval / RRF fusion (bonus #2) | ✅ built & measured | `retriever.fuse()` |
+| Caching — index + query-results (bonus #4) | ✅ built & measured | `src/cache.py`, `indexer.py` mmap load |
+
+### ✅ How to verify
+
+```bash
+uv run python -m src index --max_chunk_size 2000 --mode hybrid
+uv run python -m src search "How to configure the OpenAI server?" --k 5 --mode hybrid
+uv run python -m src search "How to configure the OpenAI server?" --k 5 --mode hybrid  # warm cache, ~24x faster
+```
+
+The second identical `search` call should return instantly and print byte-identical
+results — that's the query-results cache hit, skipping the embedding model load
+entirely (see timings below).
+
+## 📊 Performance Analysis
 
 Measured with the real CLI against both public datasets (k=5, IoU>0.05 match bar):
 
@@ -170,7 +252,7 @@ Chunk-size tuning (2000/600 vs. 1000/200) is mandatory-side work — see `main`'
 Warm-cache runs skip loading the embedding model entirely (100% cache hit) — output
 verified byte-identical to the cold run via `diff`.
 
-## Challenges faced
+## 🧩 Challenges Faced
 
 **Hybrid initially made recall *worse*, not better.** First implementation (raw chunk
 text embedded, no path signal) scored hybrid at 0.72/0.6667 — *below* pure lexical on
@@ -194,7 +276,8 @@ equal rank-weight (plain RRF has no weighting knob) drags a strong one down rath
 purely complementing it, especially once both retrievers share the same path-token
 signal instead of it being lexical-exclusive. This is reported as a real, honest result
 rather than hidden or force-tuned past it: hybrid is correctly implemented and
-demonstrable, just not a recall win on this corpus with this embedding model.
+demonstrable, just not a recall win on this corpus with this embedding model — which is
+exactly why it stays a branch, not a merge into `main`.
 
 **Cache had to be wired around the model load, not around retrieval math.** The naive
 place to cache is inside `top_k()` — but by the time `top_k()` is called, the embedding
@@ -202,7 +285,18 @@ model (the actual ~4.3s cold-start cost) has already been loaded. The cache chec
 move to the CLI/`search_dataset` boundary, *before* `_load_semantic()` runs, so a cache
 hit can skip loading the model entirely rather than just skip re-scoring.
 
-## Example usage
+## 🧪 Testing Strategy
+
+The mandatory suite (`test_chunking.py`, `test_tokenizer.py`, `test_indexer.py`,
+`test_retriever.py`, `test_evaluator.py`, `test_models.py`, `test_cli.py`) carries over
+unchanged from `main` and still passes on this branch (`make test`). **`embeddings.py`
+and `cache.py` have no dedicated pytest coverage yet** — bonus correctness here was
+validated by direct measurement instead (recall@5 per mode, cold-vs-warm byte-identical
+`diff`, fingerprint-invalidation check on a bumped `index.pkl` mtime — see
+[Design Decisions](#-design-decisions) and [Performance Analysis](#-performance-analysis)).
+Worth adding before a live demo if time allows.
+
+## 💡 Example Usage
 
 Mandatory commands are identical to `main` (see that README). Bonus:
 
@@ -214,3 +308,33 @@ uv run python -m src search_dataset \
   --k 5 --mode hybrid --save_directory data/output/search_results/UnansweredQuestions
 ```
 
+## 📎 Resources
+
+Bonus-specific, on top of `main`'s list:
+
+- [Sentence-Transformers](https://www.sbert.net/) documentation — `all-MiniLM-L6-v2`, bi-encoder embeddings.
+- Cormack, Clarke & Buettcher (2009), [*Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods*](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) — the RRF formula used for hybrid fusion.
+
+### AI usage disclosure
+
+Same workflow as `main` (see that README for the mandatory-phase breakdown): explain
+rationale before/while writing, one module at a time, measure before/after any
+retrieval-affecting change. Bonus-specific:
+
+- **Semantic embeddings + hybrid RRF (#1/#2):** AI drafted the initial
+  `embeddings.py`/`fuse()` implementation; a manual review found and fixed several bugs
+  (typos, wrong return types, flake8/mypy violations) before it ran. When hybrid first
+  underperformed pure lexical retrieval, AI helped isolate the root cause (the embedding
+  model's 256-token cap silently truncating our ~2000-char chunks, and the lack of a
+  path-token equivalent on the semantic side) through targeted experiments, each
+  measured independently, rather than guessing at a fix.
+- **Caching (#4):** AI proposed keying the cache on `(query, k, mode)` with an
+  index-fingerprint invalidation scheme, then implemented and measured it (cold vs. warm
+  timings above), confirming cold/warm outputs are byte-identical before accepting it.
+- **Git history restructuring:** splitting bonus work onto this branch (keeping `main`
+  lexical-only) was done via a non-destructive `git revert` at the user's direction.
+
+Every generated block was read, questioned, and where necessary corrected before being
+accepted — see [Challenges Faced](#-challenges-faced) for a concrete example (the hybrid
+regression) where the first AI-proposed fix was tested, measured, and reverted before the
+second was tried.
