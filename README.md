@@ -8,7 +8,7 @@
 ![bm25s](https://img.shields.io/badge/retrieval-bm25s-blue?style=flat)
 ![Qwen3](https://img.shields.io/badge/generation-Qwen3--0.6B-orange?style=flat)
 
-*Teaching BM25 to find the right ~2000 characters out of 28,246 chunks of the vLLM codebase — then asking a 0.6B-parameter model to explain what it found.*
+*Tuning BM25 to find the right ~2000 characters out of 28,246 chunks of the vLLM codebase — then asking a 0.6B-parameter model to explain what it found.*
 
 ## 📑 Table of Contents
 - [What is this project?](#-what-is-this-project)
