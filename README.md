@@ -21,7 +21,7 @@
 - [The Makefile](#-the-makefile)
 - [Algorithm Explanation — BM25 Retrieval & Chunking](#-algorithm-explanation--bm25-retrieval--chunking)
 - [Design Decisions](#-design-decisions)
-- [Bonus Features Implemented](#-bonus-features-implemented)
+- [Features Implemented](#-features-implemented)
 - [Performance Analysis](#-performance-analysis)
 - [Challenges Faced](#-challenges-faced)
 - [Testing Strategy](#-testing-strategy)
@@ -319,7 +319,7 @@ deterministic ties.
   returning nothing, so `strip_stopwords` falls back to the unfiltered terms in that
   case.
 
-## 🎁 Bonus Features Implemented
+## Features Implemented in semantic-hybrid branch
 
 Semantic embeddings, hybrid RRF fusion, and caching were all built and measured on the
 `semantic-hybrid` branch (kept separate from `main` — hybrid measurably underperforms
