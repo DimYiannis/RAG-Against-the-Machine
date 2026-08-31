@@ -204,7 +204,6 @@ version of every entry lives here instead). Use this table to jump straight to a
 | Tokenizer contract & path-token indexing | [Background](#-background--rag-bm25-and-the-vllm-corpus), [Algorithm Explanation](#-algorithm-explanation--bm25-retrieval--chunking) |
 | BM25 params & `bm25s` wiring | [Algorithm Explanation](#-algorithm-explanation--bm25-retrieval--chunking), [Performance Analysis](#-performance-analysis) |
 | Query stopword stripping | [Design Decisions](#-design-decisions), [Challenges Faced](#-challenges-faced) |
-| Semantic embeddings / hybrid RRF / caching | [Bonus Features Implemented](#-bonus-features-implemented) |
 | CLI commands & flags | [Usage](#-usage) |
 
 ## ⚙️ Installation
